@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Kart Combat — physics smoke</title>
+  <style>
+    html, body { margin: 0; height: 100%; overflow: hidden; background: #0b1020; }
+    #hud {
+      position: fixed; left: 12px; top: 12px; color: #e8eefc;
+      font: 13px/1.4 system-ui, sans-serif; background: rgba(0,0,0,.5);
+      padding: 10px 12px; border-radius: 8px; pointer-events: none; white-space: pre-line;
+    }
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+</head>
+<body>
+  <div id="hud">Loading…</div>
+  <script type="module">
+    import {
+      createVehicleController,
+      createKartMesh,
+      createHealth,
+      createWeaponSystem,
+    } from '/src/index.js';
+
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x87b5ff);
+    const camera = new THREE.PerspectiveCamera(60, innerWidth / innerHeight, 0.1, 500);
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setSize(innerWidth, innerHeight);
+    renderer.shadowMap.enabled = true;
+    document.body.appendChild(renderer.domElement);
+    scene.add(new THREE.HemisphereLight(0xffffff, 0x445566, 1.1));
+    const sun = new THREE.DirectionalLight(0xffffff, 1.15);
+    sun.position.set(40, 60, 20);
+    sun.castShadow = true;
+    scene.add(sun);
+    const ground = new THREE.Mesh(
+      new THREE.PlaneGeometry(200, 200),
+      new THREE.MeshStandardMaterial({ color: 0x3d8c40 }),
+    );
+    ground.rotation.x = -Math.PI / 2;
+    ground.receiveShadow = true;
+    scene.add(ground);
+
+    const vehicle = createVehicleController(THREE);
+    vehicle.bindKeys(window);
+    vehicle.reset(0, 0.35, 0, 0);
+    const kart = createKartMesh(THREE, { color: 0xe74c3c, playerName: 'You' });
+    scene.add(kart.root);
+    const health = createHealth(100);
+    const weapons = createWeaponSystem(THREE, { scene });
+    weapons.spawnMysteryBoxRing({ x: 0, z: 0 }, 8, 14, 0);
+    const localId = 'local';
+    const localKart = {
+      id: localId, x: 0, y: 0.35, z: 0, yaw: 0, health, alive: true,
+      spawn: { x: 0, y: 0.35, z: 0, yaw: 0 },
+    };
+
+    window.addEventListener('keydown', (e) => {
+      if (e.code === 'Space') {
+        weapons.useWeapon(localId, {
+          x: localKart.x, y: localKart.y, z: localKart.z, yaw: localKart.yaw,
+        }, { karts: [localKart], targets: [localKart] });
+      }
+      if (e.code === 'Digit1') weapons.giveWeapon(localId, 'rocket');
+      if (e.code === 'Digit2') weapons.giveWeapon(localId, 'snowballBlaster');
+      if (e.code === 'Digit3') weapons.giveWeapon(localId, 'repairKit');
+    });
+
+    const hud = document.getElementById('hud');
+    let last = performance.now();
+    function frame(now) {
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const fx = weapons.getEffects(localId);
+      vehicle.update(dt, { statusEffects: fx, groundY: 0 });
+      vehicle.syncMesh(kart.root);
+      kart.animateWheels?.(vehicle.state.speed, vehicle.state.yawRate ?? 0, dt);
+      vehicle.updateCamera(camera, dt);
+      health.tick(dt);
+      const snap = vehicle.getSnapshot();
+      localKart.x = snap.x; localKart.y = snap.y; localKart.z = snap.z; localKart.yaw = snap.yaw;
+      weapons.update(dt, [localKart], { now });
+      hud.textContent =
+        `HP ${health.state.hp}  spd ${vehicle.state.speed.toFixed(1)}  held ${weapons.getInventory(localId) || '—'}` +
+        (vehicle.state.drifting ? '  DRIFT' : '') +
+        '\nWASD · Shift drift · 1/2/3 give weapon · Space fire · drive into ? boxes';
+      renderer.render(scene, camera);
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+    onresize = () => {
+      camera.aspect = innerWidth / innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(innerWidth, innerHeight);
+    };
+  </script>
+</body>
+</html>

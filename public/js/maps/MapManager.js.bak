@@ -1,0 +1,1187 @@
+/**
+ * MapManager.js — arena map loaders for Kart Combat.
+ * Browser ESM. Pass CDN THREE into each loader (do not import npm 'three').
+ *
+ * Architect:
+ *   import { loadGravelPit, loadSkyPinball, loadBeybladeArena } from '/js/maps/MapManager.js';
+ *
+ * Note: mysteryBoxSpawns are PLAIN positions only — physics owns interactive boxes.
+ * Do NOT parent gift-box meshes here (would double visuals).
+ */
+import {
+  createGravelTexture,
+  createDirtTexture,
+  createTireTexture,
+  createRockTexture,
+  createNeonPanelTexture,
+  createBumperTexture,
+  createMetalTexture,
+  createNetTexture,
+} from './shared/textures.js';
+
+/* ─── helpers ───────────────────────────────────────────────────────── */
+
+function disposeObject3D(root) {
+  root.traverse((obj) => {
+    if (obj.geometry) obj.geometry.dispose?.();
+    if (obj.material) {
+      const mats = Array.isArray(obj.material) ? obj.material : [obj.material];
+      for (const m of mats) {
+        if (m.map) m.map.dispose?.();
+        m.dispose?.();
+      }
+    }
+  });
+  root.clear();
+}
+
+function spawnRing(count, radius, y, teams) {
+  const pts = [];
+  for (let i = 0; i < count; i++) {
+    const a = (i / count) * Math.PI * 2;
+    const x = Math.cos(a) * radius;
+    const z = Math.sin(a) * radius;
+    pts.push({
+      x,
+      y,
+      z,
+      rotationY: Math.atan2(-x, -z),
+      team: teams ? teams[i % teams.length] : undefined,
+    });
+  }
+  return pts;
+}
+
+function clampDt(delta) {
+  return Math.min(Math.max(delta || 0, 0), 0.05);
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * GRAVEL PIT — Smash Karts–style outdoor pit
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @param {any} THREE
+ * @returns {{ name, group, colliders, spawnPoints, mysteryBoxSpawns, update, dispose }}
+ */
+export function loadGravelPit(THREE) {
+  const name = 'Gravel Pit';
+  const group = new THREE.Group();
+  group.name = 'gravelPit';
+  const colliders = [];
+  const disposables = [];
+
+  const gravelTex = createGravelTexture(THREE);
+  const dirtTex = createDirtTexture(THREE);
+  const tireTex = createTireTexture(THREE);
+  const rockTex = createRockTexture(THREE);
+  disposables.push(gravelTex, dirtTex, tireTex, rockTex);
+
+  // Lights / fog once
+  const hemi = new THREE.HemisphereLight(0xffe8c8, 0x5c4a32, 0.75);
+  group.add(hemi);
+  const sun = new THREE.DirectionalLight(0xffd4a0, 1.15);
+  sun.position.set(28, 40, 18);
+  sun.castShadow = true;
+  group.add(sun);
+  group.userData.fog = { color: 0xc9b48a, near: 40, far: 110 };
+  group.userData.background = 0x87a0b4;
+
+  const floorSize = 54;
+  const floorMat = new THREE.MeshStandardMaterial({
+    map: gravelTex,
+    roughness: 0.95,
+    color: 0xbba888,
+  });
+  const floor = new THREE.Mesh(new THREE.PlaneGeometry(floorSize, floorSize), floorMat);
+  floor.rotation.x = -Math.PI / 2;
+  floor.receiveShadow = true;
+  group.add(floor);
+  disposables.push(floorMat);
+  colliders.push({
+    type: 'box',
+    id: 'floor',
+    position: { x: 0, y: -0.35, z: 0 },
+    size: { x: floorSize, y: 0.7, z: floorSize },
+    rotation: { x: 0, y: 0, z: 0 },
+    restitution: 0.15,
+  });
+
+  const dirtMat = new THREE.MeshStandardMaterial({ map: dirtTex, roughness: 0.9, color: 0x8a6a4a });
+  disposables.push(dirtMat);
+
+  function addWall(x, z, w, h, d, rotY = 0, id, tag = 'wall') {
+    const geo = new THREE.BoxGeometry(w, h, d);
+    const mesh = new THREE.Mesh(geo, dirtMat);
+    mesh.position.set(x, h / 2, z);
+    mesh.rotation.y = rotY;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    colliders.push({
+      type: 'box',
+      id: id || `wall_${colliders.length}`,
+      tag,
+      position: { x, y: h / 2, z },
+      size: { x: w, y: h, z: d },
+      rotation: { x: 0, y: rotY, z: 0 },
+      restitution: 0.2,
+    });
+  }
+
+  // Tall outer berm walls all around
+  const bermH = 3.2;
+  const bermD = 3.0;
+  const half = 26;
+  addWall(0, -half, 52, bermH, bermD, 0, 'wall_s');
+  addWall(0, half, 52, bermH, bermD, 0, 'wall_n');
+  addWall(-half, 0, bermD, bermH, 50, 0, 'wall_w');
+  addWall(half, 0, bermD, bermH, 50, 0, 'wall_e');
+
+  // Corner berm thickeners (readable corners — keep driveable, not 8×8 plugs)
+  addWall(-22, -22, 4, 3.6, 4, 0.2, 'berm_sw');
+  addWall(22, -22, 4, 3.6, 4, -0.2, 'berm_se');
+  addWall(-22, 22, 4, 3.6, 4, -0.2, 'berm_nw');
+  addWall(22, 22, 4, 3.6, 4, 0.2, 'berm_ne');
+
+  // Inner cover walls (line-of-sight blockers, not sealing lanes)
+  addWall(-10, 2, 1.6, 1.8, 10, 0.12, 'inner_a');
+  addWall(12, -6, 12, 1.8, 1.6, 0.28, 'inner_b');
+  addWall(4, 10, 8, 1.6, 1.5, -0.35, 'inner_c');
+
+  // Drivable ramps — visual is angled; colliders are stepped flat AABB stairs
+  // (host resolve uses AABB and ignores rotation, so a rotated hull fights the kart).
+  function addRamp(x, z, length, width, height, rotY, id) {
+    const geo = new THREE.BoxGeometry(width, 0.45, length);
+    const mesh = new THREE.Mesh(geo, dirtMat);
+    const angle = Math.atan2(height, length);
+    mesh.position.set(x, height / 2, z);
+    mesh.rotation.order = 'YXZ';
+    mesh.rotation.y = rotY;
+    mesh.rotation.x = -angle;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+
+    const steps = 4;
+    const stepLen = length / steps;
+    const stepH = Math.max(0.35, height / steps);
+    // Local +Z after Y-rot points downhill (pitch -angle lowers +Z end).
+    const dirX = Math.sin(rotY);
+    const dirZ = Math.cos(rotY);
+    const baseId = id || `ramp_${colliders.length}`;
+    for (let i = 0; i < steps; i++) {
+      // i=0 low end (+local Z), i=steps-1 high end (−local Z)
+      const along = length / 2 - (i + 0.5) * stepLen;
+      const wx = x + dirX * along;
+      const wz = z + dirZ * along;
+      const topY = ((i + 1) / steps) * height;
+      const wy = topY - stepH / 2;
+      colliders.push({
+        type: 'box',
+        id: `${baseId}_s${i}`,
+        tag: 'ramp',
+        position: { x: wx, y: Math.max(stepH / 2, wy), z: wz },
+        size: { x: width, y: stepH, z: stepLen * 1.02 },
+        rotation: { x: 0, y: rotY, z: 0 },
+        restitution: 0.1,
+      });
+    }
+  }
+  addRamp(-9, -7, 9, 5, 3.0, 0.35, 'ramp_1');
+  addRamp(11, 5, 10, 5.5, 3.4, Math.PI + 0.55, 'ramp_2');
+  addRamp(0, 13, 8, 4.5, 2.6, Math.PI * 0.5, 'ramp_3');
+  addRamp(-14, 8, 7.5, 4, 2.4, -0.7, 'ramp_4');
+
+  // Short bridge / jump pad between mid lanes
+  const bridgeMat = new THREE.MeshStandardMaterial({
+    color: 0x9a7a55,
+    map: dirtTex,
+    roughness: 0.85,
+  });
+  disposables.push(bridgeMat);
+  {
+    const bw = 3.2;
+    const bl = 10;
+    const by = 1.8;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(bw, 0.4, bl), bridgeMat);
+    mesh.position.set(6, by, -12);
+    mesh.rotation.y = 0.4;
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    colliders.push({
+      type: 'box',
+      id: 'bridge_1',
+      tag: 'bridge',
+      position: { x: 6, y: by, z: -12 },
+      size: { x: bw, y: 0.4, z: bl },
+      rotation: { x: 0, y: 0.4, z: 0 },
+      restitution: 0.2,
+    });
+    // Approach ramps onto bridge
+    addRamp(2.5, -15.5, 5, 3, 1.8, 0.4, 'ramp_bridge_a');
+    addRamp(9.2, -8.8, 5, 3, 1.8, Math.PI + 0.4, 'ramp_bridge_b');
+  }
+
+  // Jump pad (short raised platform)
+  {
+    const pad = new THREE.Mesh(new THREE.BoxGeometry(4, 0.5, 4), bridgeMat);
+    pad.position.set(-16, 0.35, -4);
+    pad.castShadow = true;
+    group.add(pad);
+    colliders.push({
+      type: 'box',
+      id: 'jump_pad',
+      tag: 'pad',
+      kind: 'jump',
+      position: { x: -16, y: 0.35, z: -4 },
+      size: { x: 4, y: 0.5, z: 4 },
+      rotation: { x: 0, y: 0, z: 0 },
+      restitution: 0.2,
+    });
+  }
+
+  // Tire barriers — corners + mid landmarks
+  const tireMat = new THREE.MeshStandardMaterial({ map: tireTex, roughness: 0.7 });
+  disposables.push(tireMat);
+  function addTires(x, z, stacks = 3) {
+    for (let i = 0; i < stacks; i++) {
+      const mesh = new THREE.Mesh(new THREE.TorusGeometry(0.7, 0.22, 8, 16), tireMat);
+      mesh.position.set(x, 0.22 + i * 0.55, z);
+      mesh.rotation.x = Math.PI / 2;
+      mesh.castShadow = true;
+      group.add(mesh);
+    }
+    colliders.push({
+      type: 'cylinder',
+      id: `tires_${colliders.length}`,
+      tag: 'barrier',
+      position: { x, y: (stacks * 0.55) / 2, z },
+      radius: 0.92,
+      height: stacks * 0.55,
+      rotation: { x: 0, y: 0, z: 0 },
+      restitution: 0.2,
+    });
+  }
+  // Corner stacks
+  [[-20, -20], [20, -20], [-20, 20], [20, 20], [-20, 0], [20, 0], [0, -20], [0, 20]].forEach(
+    ([x, z], i) => addTires(x, z, 3 + (i % 2)),
+  );
+  // Mid cluster tires (LOS blockers — nudged clear of center rock hulls)
+  addTires(-7, 6, 3);
+  addTires(7, -5, 3);
+  addTires(-5, -7, 2);
+  addTires(6, 7, 2);
+
+  // Center rock cluster — strong landmark
+  const rockMat = new THREE.MeshStandardMaterial({ map: rockTex, roughness: 0.88, color: 0x888480 });
+  disposables.push(rockMat);
+  const rocks = [
+    { x: 0, y: 1.4, z: 0, sx: 4.2, sy: 2.8, sz: 3.8 },
+    { x: 2.8, y: 0.95, z: 1.8, sx: 2.4, sy: 1.9, sz: 2.4 },
+    { x: -2.4, y: 0.85, z: -1.6, sx: 2.6, sy: 1.7, sz: 2.0 },
+    { x: 1.2, y: 0.7, z: -2.4, sx: 1.8, sy: 1.4, sz: 2.0 },
+    { x: -2.0, y: 0.65, z: 2.2, sx: 1.6, sy: 1.3, sz: 1.8 },
+  ];
+  rocks.forEach((r, i) => {
+    const mesh = new THREE.Mesh(new THREE.DodecahedronGeometry(1, 0), rockMat);
+    mesh.position.set(r.x, r.y, r.z);
+    mesh.scale.set(r.sx / 2, r.sy / 2, r.sz / 2);
+    mesh.castShadow = true;
+    group.add(mesh);
+    colliders.push({
+      type: 'box',
+      id: `rock_${i}`,
+      tag: 'obstacle',
+      position: { x: r.x, y: r.y, z: r.z },
+      size: { x: r.sx, y: r.sy, z: r.sz },
+      rotation: { x: 0, y: 0, z: 0 },
+      restitution: 0.15,
+    });
+  });
+
+  // Flags / poles at quadrant markers
+  const poleMat = new THREE.MeshStandardMaterial({ color: 0xdddddd, metalness: 0.6, roughness: 0.4 });
+  const flagMats = [
+    new THREE.MeshStandardMaterial({ color: 0xff3344, emissive: 0xaa1122, emissiveIntensity: 0.25 }),
+    new THREE.MeshStandardMaterial({ color: 0x3388ff, emissive: 0x1144aa, emissiveIntensity: 0.25 }),
+    new THREE.MeshStandardMaterial({ color: 0xffcc22, emissive: 0xaa8800, emissiveIntensity: 0.25 }),
+    new THREE.MeshStandardMaterial({ color: 0x33cc66, emissive: 0x118833, emissiveIntensity: 0.25 }),
+  ];
+  disposables.push(poleMat, ...flagMats);
+  [
+    [-18, -12],
+    [18, -12],
+    [-18, 12],
+    [18, 12],
+  ].forEach(([x, z], i) => {
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 4.5, 8), poleMat);
+    pole.position.set(x, 2.25, z);
+    pole.castShadow = true;
+    group.add(pole);
+    const flag = new THREE.Mesh(new THREE.PlaneGeometry(1.4, 0.9), flagMats[i % flagMats.length]);
+    flag.position.set(x + 0.75, 3.6, z);
+    flag.castShadow = true;
+    group.add(flag);
+  });
+
+  // Spawn ring ~8 facing inward, clear of walls
+  const spawnPoints = spawnRing(8, 17, 1.2, ['A', 'B']);
+
+  // Dense mystery box pads in open lanes (physics owns meshes)
+  const mysteryBoxSpawns = [
+    { x: -12, y: 1.15, z: -12, id: 'mb_sw' },
+    { x: 12, y: 1.15, z: -12, id: 'mb_se' },
+    { x: -12, y: 1.15, z: 12, id: 'mb_nw' },
+    { x: 12, y: 1.15, z: 12, id: 'mb_ne' },
+    { x: 0, y: 1.15, z: -16, id: 'mb_s' },
+    { x: 0, y: 1.15, z: 16, id: 'mb_n' },
+    { x: -16, y: 1.15, z: 0, id: 'mb_w' },
+    { x: 16, y: 1.15, z: 0, id: 'mb_e' },
+    { x: -8, y: 1.15, z: 0, id: 'mb_mid_w' },
+    { x: 8, y: 1.15, z: 0, id: 'mb_mid_e' },
+    { x: 0, y: 1.15, z: -8, id: 'mb_mid_s' },
+    { x: 0, y: 1.15, z: 8, id: 'mb_mid_n' },
+    { x: -14, y: 1.15, z: -6, id: 'mb_lane_a' },
+    { x: 14, y: 1.15, z: 6, id: 'mb_lane_b' },
+    { x: -6, y: 1.15, z: 14, id: 'mb_lane_c' },
+    { x: 6, y: 1.15, z: -14, id: 'mb_lane_d' },
+    { x: -10, y: 3.2, z: -5, id: 'mb_ramp1' },
+    { x: 10, y: 3.5, z: 4, id: 'mb_ramp2' },
+    { x: 6, y: 2.3, z: -12, id: 'mb_bridge' },
+    { x: -16, y: 1.5, z: -4, id: 'mb_pad' },
+  ];
+
+  return {
+    name,
+    id: 'gravelPit',
+    group,
+    colliders,
+    spawnPoints,
+    mysteryBoxSpawns,
+    update(delta) {
+      clampDt(delta);
+    },
+    dispose() {
+      disposeObject3D(group);
+      disposables.forEach((d) => d.dispose?.());
+    },
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * SKY PINBALL — floating tiers + perimeter bumpers
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @param {any} THREE
+ */
+export function loadSkyPinball(THREE) {
+  const name = 'Sky Pinball';
+  const group = new THREE.Group();
+  group.name = 'skyPinball';
+  const colliders = [];
+  const disposables = [];
+  const bumpers = [];
+
+  const panelTex = createNeonPanelTexture(THREE, '#12182a', '#00e5ff');
+  const panelTex2 = createNeonPanelTexture(THREE, '#1a1028', '#b14eff');
+  const bumperTex = createBumperTexture(THREE, '#ff2d95');
+  disposables.push(panelTex, panelTex2, bumperTex);
+
+  group.add(new THREE.HemisphereLight(0x6688ff, 0x1a1030, 0.55));
+  const key = new THREE.DirectionalLight(0xaaccff, 0.9);
+  key.position.set(10, 30, 12);
+  group.add(key);
+  group.add(new THREE.PointLight(0x00e5ff, 1.2, 60).translateY(8));
+  group.userData.fog = { color: 0x0a0e1a, near: 25, far: 90 };
+  group.userData.background = 0x060812;
+
+  const matA = new THREE.MeshStandardMaterial({
+    map: panelTex,
+    roughness: 0.45,
+    metalness: 0.35,
+    emissive: 0x003344,
+    emissiveIntensity: 0.25,
+  });
+  const matB = new THREE.MeshStandardMaterial({
+    map: panelTex2,
+    roughness: 0.45,
+    metalness: 0.35,
+    emissive: 0x220044,
+    emissiveIntensity: 0.3,
+  });
+  const railMat = new THREE.MeshStandardMaterial({
+    color: 0x00e5ff,
+    emissive: 0x00e5ff,
+    emissiveIntensity: 0.55,
+    metalness: 0.4,
+    roughness: 0.35,
+  });
+  disposables.push(matA, matB, railMat);
+
+  function addPlatform(x, y, z, w, h, d, mat, id) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    mesh.receiveShadow = true;
+    group.add(mesh);
+    const edge = new THREE.Mesh(
+      new THREE.BoxGeometry(w + 0.05, 0.08, d + 0.05),
+      new THREE.MeshStandardMaterial({
+        color: mat === matB ? 0xb14eff : 0x00e5ff,
+        emissive: mat === matB ? 0xb14eff : 0x00e5ff,
+        emissiveIntensity: 0.8,
+      }),
+    );
+    edge.position.set(x, y + h / 2 + 0.02, z);
+    group.add(edge);
+    colliders.push({
+      type: 'box',
+      id,
+      tag: 'platform',
+      position: { x, y, z },
+      size: { x: w, y: h, z: d },
+      rotation: { x: 0, y: 0, z: 0 },
+      restitution: 0.25,
+    });
+  }
+
+  // 3 distinct tiers with driveable area
+  addPlatform(0, 0, 0, 20, 0.65, 20, matA, 'tier0');
+  addPlatform(-13, 5.2, 5, 12, 0.55, 12, matB, 'tier1a');
+  addPlatform(12, 5.8, -6, 11, 0.55, 11, matA, 'tier1b');
+  addPlatform(0, 11.5, -2, 10, 0.55, 10, matB, 'tier2');
+  addPlatform(-5, 2.6, -12, 6, 0.45, 6, matA, 'side_low');
+
+  // Railings / low walls — sit on platform top rim (thin) so stacked AABB
+  // doesn't fight vertically with the platform slab.
+  function addRail(x, y, z, w, h, d, rotY, id) {
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), railMat);
+    mesh.position.set(x, y, z);
+    mesh.rotation.y = rotY || 0;
+    mesh.castShadow = true;
+    group.add(mesh);
+    colliders.push({
+      type: 'box',
+      id,
+      tag: 'wall',
+      position: { x, y, z },
+      size: { x: w, y: h, z: d },
+      rotation: { x: 0, y: rotY || 0, z: 0 },
+      restitution: 0.2,
+    });
+  }
+  const rh = 0.55;
+  // y = platformTop + rh/2  (platform centers/heights from addPlatform calls)
+  const t0Top = 0 + 0.65 / 2;
+  const t1aTop = 5.2 + 0.55 / 2;
+  const t1bTop = 5.8 + 0.55 / 2;
+  const t2Top = 11.5 + 0.55 / 2;
+  // Tier0 rails (gaps for ramps/bridges)
+  addRail(0, t0Top + rh / 2, -10.1, 14, rh, 0.28, 0, 'rail0_s');
+  addRail(0, t0Top + rh / 2, 10.1, 14, rh, 0.28, 0, 'rail0_n');
+  addRail(-10.1, t0Top + rh / 2, 0, 0.28, rh, 14, 0, 'rail0_w');
+  addRail(10.1, t0Top + rh / 2, 0, 0.28, rh, 14, 0, 'rail0_e');
+  // Tier1a
+  addRail(-13, t1aTop + rh / 2, 5 - 6.1, 10, rh, 0.25, 0, 'rail1a_s');
+  addRail(-13, t1aTop + rh / 2, 5 + 6.1, 10, rh, 0.25, 0, 'rail1a_n');
+  addRail(-13 - 6.1, t1aTop + rh / 2, 5, 0.25, rh, 10, 0, 'rail1a_w');
+  // Tier1b
+  addRail(12, t1bTop + rh / 2, -6 - 5.6, 9, rh, 0.25, 0, 'rail1b_s');
+  addRail(12, t1bTop + rh / 2, -6 + 5.6, 9, rh, 0.25, 0, 'rail1b_n');
+  addRail(12 + 5.6, t1bTop + rh / 2, -6, 0.25, rh, 9, 0, 'rail1b_e');
+  // Tier2
+  addRail(0, t2Top + rh / 2, -2 - 5.1, 8, rh, 0.25, 0, 'rail2_s');
+  addRail(0, t2Top + rh / 2, -2 + 5.1, 8, rh, 0.25, 0, 'rail2_n');
+  addRail(-5.1, t2Top + rh / 2, -2, 0.25, rh, 8, 0, 'rail2_w');
+  addRail(5.1, t2Top + rh / 2, -2, 0.25, rh, 8, 0, 'rail2_e');
+
+  function addBridge(x, y, z, length, width, rotY, rise, id) {
+    const thickness = 0.35;
+    const mesh = new THREE.Mesh(new THREE.BoxGeometry(width, thickness, length), matA);
+    const pitch = rise ? -Math.atan2(rise, length) : 0;
+    mesh.position.set(x, y + rise / 2, z);
+    mesh.rotation.order = 'YXZ';
+    mesh.rotation.y = rotY;
+    mesh.rotation.x = pitch;
+    mesh.castShadow = true;
+    group.add(mesh);
+    colliders.push({
+      type: 'box',
+      id,
+      tag: 'bridge',
+      position: { x, y: y + rise / 2, z },
+      size: { x: width, y: thickness, z: length },
+      rotation: { x: pitch, y: rotY, z: 0 },
+      restitution: 0.2,
+    });
+    // Side rails on bridge
+    const sideOffset = width / 2 + 0.12;
+    for (const side of [-1, 1]) {
+      const sx = x + Math.cos(rotY) * side * sideOffset;
+      const sz = z + Math.sin(rotY) * side * sideOffset;
+      // Approximate — visual railing only along span center; collider thin wall
+      const rail = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.55, length * 0.9), railMat);
+      rail.position.set(sx, y + rise / 2 + 0.35, sz);
+      rail.rotation.order = 'YXZ';
+      rail.rotation.y = rotY;
+      rail.rotation.x = pitch;
+      group.add(rail);
+    }
+  }
+  addBridge(-6.5, 2.4, 2.5, 11, 2.8, -0.45, 5.2, 'br1');
+  addBridge(6, 2.7, -3, 12, 2.8, 0.85, 5.8, 'br2');
+  addBridge(-5.5, 8.2, 1.5, 11, 2.4, 0.5, 6.2, 'br3');
+  addBridge(5.5, 8.5, -4, 10, 2.4, -0.65, 5.8, 'br4');
+  addBridge(-2.5, 1.2, -6, 8, 2.2, 1.1, 2.6, 'br_side');
+
+  // Void trigger below (box — plain-data collider types only)
+  colliders.push({
+    type: 'box',
+    id: 'void',
+    kind: 'void',
+    tag: 'void',
+    position: { x: 0, y: -20, z: 0 },
+    size: { x: 200, y: 0.5, z: 200 },
+    rotation: { x: 0, y: 0, z: 0 },
+    restitution: 0,
+  });
+  const voidMesh = new THREE.Mesh(
+    new THREE.PlaneGeometry(120, 120),
+    new THREE.MeshBasicMaterial({
+      color: 0x110022,
+      transparent: true,
+      opacity: 0.45,
+      side: THREE.DoubleSide,
+    }),
+  );
+  voidMesh.rotation.x = -Math.PI / 2;
+  voidMesh.position.y = -20;
+  group.add(voidMesh);
+
+  function addBumper(x, y, z, radius = 1.1, bounce = 12) {
+    const mat = new THREE.MeshStandardMaterial({
+      map: bumperTex,
+      emissive: 0xff2d95,
+      emissiveIntensity: 0.4,
+      roughness: 0.35,
+      metalness: 0.2,
+    });
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(radius, 24, 16), mat);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    group.add(mesh);
+    disposables.push(mat);
+    // Trigger (not solid bounce wall) — avoids restitution×applyForce double-hit shake.
+    const col = {
+      type: 'sphere',
+      id: `bumper_${bumpers.length}`,
+      kind: 'bumper',
+      tag: 'bumper',
+      position: { x, y, z },
+      radius,
+      rotation: { x: 0, y: 0, z: 0 },
+      isTrigger: true,
+      solid: false,
+      restitution: 0.2,
+      bounceStrength: bounce,
+    };
+    colliders.push(col);
+    bumpers.push({ mesh, mat, col, position: { x, y, z }, radius, bounceStrength: bounce, flash: 0 });
+  }
+
+  // Perimeter + on-tier bumpers (mild bounceStrength metadata only)
+  addBumper(0, 1.25, 0, 1.35, 14);
+  for (let i = 0; i < 8; i++) {
+    const a = (i / 8) * Math.PI * 2;
+    addBumper(Math.cos(a) * 8.2, 1.2, Math.sin(a) * 8.2, 0.9, 12);
+  }
+  // Outer perimeter bumpers
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2 + 0.3;
+    addBumper(Math.cos(a) * 11.5, 1.15, Math.sin(a) * 11.5, 0.75, 10);
+  }
+  addBumper(-13, 6.4, 5, 1.05, 12);
+  addBumper(12, 7.0, -6, 1.05, 12);
+  addBumper(0, 12.7, -2, 1.2, 14);
+  addBumper(-5, 3.4, -12, 0.9, 11);
+
+  const spawnPoints = [
+    ...spawnRing(4, 6.5, 1.1, ['tier0']),
+    ...spawnRing(2, 3.5, 6.2, ['tier1']).map((p) => ({
+      ...p,
+      x: p.x - 13,
+      z: p.z + 5,
+      y: 6.2,
+    })),
+    ...spawnRing(2, 3.5, 6.8, ['tier1']).map((p) => ({
+      ...p,
+      x: p.x + 12,
+      z: p.z - 6,
+      y: 6.8,
+    })),
+    ...spawnRing(3, 3, 12.2, ['tier2']).map((p) => ({ ...p, z: p.z - 2, y: 12.2 })),
+  ];
+
+  // Dense mystery boxes across tiers (positions only — clear of bumper centers)
+  const mysteryBoxSpawns = [
+    // Tier 0
+    { x: -6, y: 1.2, z: -6, id: 'sp_t0_a' },
+    { x: 6, y: 1.2, z: -6, id: 'sp_t0_b' },
+    { x: -6, y: 1.2, z: 6, id: 'sp_t0_c' },
+    { x: 6, y: 1.2, z: 6, id: 'sp_t0_d' },
+    { x: 0, y: 1.2, z: -7, id: 'sp_t0_e' },
+    { x: 0, y: 1.2, z: 7, id: 'sp_t0_f' },
+    { x: -7, y: 1.2, z: 0, id: 'sp_t0_g' },
+    { x: 7, y: 1.2, z: 0, id: 'sp_t0_h' },
+    // Tier 1a (moved off bumper at -13,6.4,5)
+    { x: -15.5, y: 6.4, z: 7.5, id: 'sp_t1a_c' },
+    { x: -16, y: 6.4, z: 2, id: 'sp_t1a_a' },
+    { x: -10, y: 6.4, z: 8, id: 'sp_t1a_b' },
+    { x: -16, y: 6.4, z: 8, id: 'sp_t1a_d' },
+    // Tier 1b (moved off bumper at 12,7,-6)
+    { x: 14.5, y: 7.0, z: -3.5, id: 'sp_t1b_c' },
+    { x: 9, y: 7.0, z: -3, id: 'sp_t1b_a' },
+    { x: 15, y: 7.0, z: -9, id: 'sp_t1b_b' },
+    { x: 9, y: 7.0, z: -9, id: 'sp_t1b_d' },
+    // Tier 2 (moved off bumper at 0,12.7,-2)
+    { x: 2.5, y: 12.7, z: -4.5, id: 'sp_t2_c' },
+    { x: -3, y: 12.7, z: -4, id: 'sp_t2_a' },
+    { x: 3, y: 12.7, z: 0, id: 'sp_t2_b' },
+    { x: -2, y: 12.7, z: 1, id: 'sp_t2_d' },
+    // Side + bridges (moved off bumper at -5,3.4,-12)
+    { x: -7.5, y: 3.5, z: -10, id: 'sp_side' },
+    { x: -6, y: 5.0, z: 2, id: 'sp_br1' },
+    { x: 6, y: 5.5, z: -3, id: 'sp_br2' },
+    { x: 0, y: 11.0, z: -2, id: 'sp_br_top' },
+  ];
+
+  const cooldown = new Map();
+
+  function update(delta, world = {}) {
+    const dt = clampDt(delta);
+    for (const b of bumpers) {
+      if (b.flash > 0) {
+        b.flash = Math.max(0, b.flash - dt * 3);
+        b.mat.emissiveIntensity = 0.4 + b.flash * 2.5;
+      }
+    }
+    for (const [k, t] of cooldown) {
+      const n = t - dt;
+      if (n <= 0) cooldown.delete(k);
+      else cooldown.set(k, n);
+    }
+    const players = world.karts
+      ? world.karts.map((k) => ({
+          id: k.cfg?.playerId || k.state?.playerId || 'kart',
+          position: k.state?.position,
+          velocity: k.state?.velocity,
+        }))
+      : world.players || [];
+    for (const player of players) {
+      const p = player.position;
+      if (!p) continue;
+      for (const b of bumpers) {
+        const dx = (p.x ?? 0) - b.position.x;
+        const dy = (p.y ?? 0) - b.position.y;
+        const dz = (p.z ?? 0) - b.position.z;
+        const dist = Math.sqrt(dx * dx + dy * dy + dz * dz);
+        if (dist >= b.radius + 0.6 || dist < 0.001) continue;
+        const key = `${player.id}:${b.col.id}`;
+        if (cooldown.has(key)) continue;
+        cooldown.set(key, 0.45);
+        // Visual flash only by default (emissiveIntensity). Mild horizontal
+        // impulse only when host exposes applyForce — never +Y launch.
+        b.flash = 1;
+        b.mat.emissiveIntensity = 2.8;
+        if (typeof world.applyForce === 'function') {
+          const inv = 1 / dist;
+          const s = Math.min(b.bounceStrength || 10, 10);
+          world.applyForce(player.id, {
+            x: dx * inv * s,
+            y: 0,
+            z: dz * inv * s,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    name,
+    id: 'skyPinball',
+    group,
+    colliders,
+    spawnPoints,
+    mysteryBoxSpawns,
+    update,
+    dispose() {
+      disposeObject3D(group);
+      disposables.forEach((d) => d.dispose?.());
+      bumpers.length = 0;
+    },
+  };
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+ * BEYBLADE ARENA — rotating bowl (radius 25) + centrifugal force
+ * ═══════════════════════════════════════════════════════════════════════ */
+
+/**
+ * @param {any} THREE
+ */
+export function loadBeybladeArena(THREE) {
+  const name = 'Beyblade Arena';
+  const group = new THREE.Group();
+  group.name = 'beybladeArena';
+  const colliders = [];
+  const disposables = [];
+  /** Colliders that rotate with the bowl (not the static cage). */
+  const rotatingColliderIds = new Set();
+
+  const ARENA_RADIUS = 25;
+  // Slow carnival spin (~1 turn / 45s).
+  let angularVelocity = 0.14; // rad/s
+  // Mild outward accel at the slow ω (a ≈ ω² r * scale).
+  const centrifugalScale = 0.35;
+
+  const metalTex = createMetalTexture(THREE);
+  const netTex = createNetTexture(THREE);
+  disposables.push(metalTex, netTex);
+
+  group.add(new THREE.HemisphereLight(0xffffff, 0x334455, 0.6));
+  const key = new THREE.DirectionalLight(0xffffff, 1.1);
+  key.position.set(12, 28, 10);
+  group.add(key);
+  group.add(new THREE.PointLight(0x66ccff, 0.9, 50).translateY(8));
+  group.userData.fog = { color: 0x1a2030, near: 30, far: 90 };
+  group.userData.background = 0x101520;
+
+  // Only the dish spins — root `group` stays put.
+  const bowlGroup = new THREE.Group();
+  bowlGroup.name = 'bowl';
+  group.add(bowlGroup);
+
+  const bowlMat = new THREE.MeshStandardMaterial({
+    map: metalTex,
+    color: 0xc8d0dc,
+    metalness: 0.85,
+    roughness: 0.22,
+  });
+  const accentA = new THREE.MeshStandardMaterial({
+    color: 0xff3355,
+    metalness: 0.6,
+    roughness: 0.3,
+    emissive: 0xff3355,
+    emissiveIntensity: 0.35,
+  });
+  const accentB = new THREE.MeshStandardMaterial({
+    color: 0x33aaff,
+    metalness: 0.6,
+    roughness: 0.3,
+    emissive: 0x33aaff,
+    emissiveIntensity: 0.35,
+  });
+  const accentC = new THREE.MeshStandardMaterial({
+    color: 0xffcc33,
+    metalness: 0.5,
+    roughness: 0.35,
+    emissive: 0xaa8800,
+    emissiveIntensity: 0.3,
+  });
+  const accentD = new THREE.MeshStandardMaterial({
+    color: 0x44dd88,
+    metalness: 0.5,
+    roughness: 0.35,
+    emissive: 0x228855,
+    emissiveIntensity: 0.3,
+  });
+  const netMat = new THREE.MeshStandardMaterial({
+    map: netTex,
+    color: 0xa8d8ff,
+    metalness: 0.2,
+    roughness: 0.45,
+    transparent: true,
+    opacity: 0.38,
+    side: THREE.DoubleSide,
+    emissive: 0x2266aa,
+    emissiveIntensity: 0.15,
+  });
+  const netBarMat = new THREE.MeshStandardMaterial({
+    color: 0xd0e8ff,
+    metalness: 0.55,
+    roughness: 0.35,
+    emissive: 0x88ccff,
+    emissiveIntensity: 0.2,
+  });
+  disposables.push(bowlMat, accentA, accentB, accentC, accentD, netMat, netBarMat);
+
+  // Dish profile — radius 25
+  const pts = [];
+  for (let i = 0; i <= 32; i++) {
+    const t = i / 32;
+    pts.push(new THREE.Vector2(t * ARENA_RADIUS, Math.pow(t, 2.1) * 5.5));
+  }
+  const bowlMesh = new THREE.Mesh(new THREE.LatheGeometry(pts, 72), bowlMat);
+  bowlMesh.castShadow = true;
+  bowlMesh.receiveShadow = true;
+  bowlGroup.add(bowlMesh);
+
+  // Center podium (readable landmark)
+  const podium = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.4, 2.8, 0.55, 32),
+    new THREE.MeshStandardMaterial({
+      color: 0xe8eef5,
+      metalness: 0.9,
+      roughness: 0.15,
+      map: metalTex,
+      emissive: 0x334455,
+      emissiveIntensity: 0.15,
+    }),
+  );
+  podium.position.y = 0.35;
+  podium.castShadow = true;
+  podium.receiveShadow = true;
+  bowlGroup.add(podium);
+
+  const floor = new THREE.Mesh(
+    new THREE.CircleGeometry(8, 64),
+    new THREE.MeshStandardMaterial({
+      color: 0xe8eef5,
+      metalness: 0.9,
+      roughness: 0.15,
+      map: metalTex,
+    }),
+  );
+  floor.rotation.x = -Math.PI / 2;
+  floor.position.y = 0.05;
+  floor.receiveShadow = true;
+  bowlGroup.add(floor);
+
+  // Colored sector wedges (visual clarity of rotation)
+  const sectorMats = [accentA, accentB, accentC, accentD];
+  for (let i = 0; i < 8; i++) {
+    const a0 = (i / 8) * Math.PI * 2;
+    const shape = new THREE.Shape();
+    shape.moveTo(0, 0);
+    const steps = 8;
+    for (let s = 0; s <= steps; s++) {
+      const a = a0 + (s / steps) * (Math.PI / 4);
+      shape.lineTo(Math.cos(a) * 7.5, Math.sin(a) * 7.5);
+    }
+    shape.lineTo(0, 0);
+    const geo = new THREE.ShapeGeometry(shape);
+    const wedge = new THREE.Mesh(geo, sectorMats[i % sectorMats.length]);
+    wedge.rotation.x = -Math.PI / 2;
+    wedge.position.y = 0.08;
+    wedge.material = wedge.material.clone();
+    wedge.material.transparent = true;
+    wedge.material.opacity = 0.35;
+    wedge.material.emissiveIntensity = 0.2;
+    disposables.push(wedge.material);
+    bowlGroup.add(wedge);
+  }
+
+  function ring(radius, y, mat) {
+    const m = new THREE.Mesh(new THREE.TorusGeometry(radius, 0.12, 8, 72), mat);
+    m.rotation.x = Math.PI / 2;
+    m.position.y = y;
+    bowlGroup.add(m);
+  }
+  // Groove rings
+  ring(6, 0.35, accentC);
+  ring(10, 0.9, accentA);
+  ring(14, 1.6, accentD);
+  ring(16, 2.2, accentB);
+  ring(19, 3.1, accentA);
+  ring(21, 3.9, accentB);
+  ring(23.5, 4.8, accentC);
+  ring(24.5, 5.3, accentB);
+
+  // Banked lip clarity
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(ARENA_RADIUS, 0.4, 12, 72), bowlMat);
+  rim.rotation.x = Math.PI / 2;
+  rim.position.y = 5.5;
+  bowlGroup.add(rim);
+  const lipBand = new THREE.Mesh(
+    new THREE.TorusGeometry(ARENA_RADIUS - 0.2, 0.18, 10, 72),
+    accentA,
+  );
+  lipBand.rotation.x = Math.PI / 2;
+  lipBand.position.y = 5.75;
+  bowlGroup.add(lipBand);
+
+  // Rim fins
+  for (let i = 0; i < 12; i++) {
+    const a = (i / 12) * Math.PI * 2;
+    const fin = new THREE.Mesh(new THREE.BoxGeometry(0.4, 1.0, 2.2), i % 2 ? accentA : accentB);
+    fin.position.set(Math.cos(a) * 23.5, 4.6, Math.sin(a) * 23.5);
+    fin.rotation.y = -a;
+    bowlGroup.add(fin);
+  }
+
+  // Start lights / pylons around mid-radius
+  for (let i = 0; i < 6; i++) {
+    const a = (i / 6) * Math.PI * 2;
+    const r = 11.5;
+    const pylon = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.18, 0.22, 2.2, 8),
+      i % 2 ? accentA : accentB,
+    );
+    pylon.position.set(Math.cos(a) * r, 1.3, Math.sin(a) * r);
+    pylon.castShadow = true;
+    bowlGroup.add(pylon);
+    const lamp = new THREE.Mesh(
+      new THREE.SphereGeometry(0.28, 12, 10),
+      new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        emissive: i % 2 ? 0xff3355 : 0x33aaff,
+        emissiveIntensity: 1.2,
+      }),
+    );
+    lamp.position.set(Math.cos(a) * r, 2.5, Math.sin(a) * r);
+    bowlGroup.add(lamp);
+  }
+
+  // ── Static containment cage / net (world-fixed — does NOT spin) ──
+  const CAGE_RADIUS = ARENA_RADIUS + 0.85; // ~25.85
+  const CAGE_HEIGHT = 14;
+  const CAGE_Y = CAGE_HEIGHT / 2 + 0.5;
+  const cageGroup = new THREE.Group();
+  cageGroup.name = 'cage';
+  group.add(cageGroup);
+
+  const netShell = new THREE.Mesh(
+    new THREE.CylinderGeometry(CAGE_RADIUS, CAGE_RADIUS, CAGE_HEIGHT, 64, 1, true),
+    netMat,
+  );
+  netShell.position.y = CAGE_Y;
+  cageGroup.add(netShell);
+
+  const BAR_COUNT = 24;
+  for (let i = 0; i < BAR_COUNT; i++) {
+    const a = (i / BAR_COUNT) * Math.PI * 2;
+    const bar = new THREE.Mesh(new THREE.BoxGeometry(0.18, CAGE_HEIGHT, 0.18), netBarMat);
+    bar.position.set(Math.cos(a) * CAGE_RADIUS, CAGE_Y, Math.sin(a) * CAGE_RADIUS);
+    cageGroup.add(bar);
+  }
+  [2.5, 6.5, 10.5, 14].forEach((y) => {
+    const hoop = new THREE.Mesh(new THREE.TorusGeometry(CAGE_RADIUS, 0.1, 8, 64), netBarMat);
+    hoop.rotation.x = Math.PI / 2;
+    hoop.position.y = y;
+    cageGroup.add(hoop);
+  });
+  const topLip = new THREE.Mesh(new THREE.TorusGeometry(CAGE_RADIUS, 0.28, 10, 64), accentB);
+  topLip.rotation.x = Math.PI / 2;
+  topLip.position.y = CAGE_HEIGHT + 0.5;
+  cageGroup.add(topLip);
+
+  /** type:'cylinder' floor playable area */
+  const floorCol = {
+    type: 'cylinder',
+    id: 'bowl_floor',
+    tag: 'floor',
+    position: { x: 0, y: 0.15, z: 0 },
+    radius: 8,
+    height: 0.3,
+    rotation: { x: 0, y: 0, z: 0 },
+    restitution: 0.35,
+  };
+  colliders.push(floorCol);
+  rotatingColliderIds.add(floorCol.id);
+
+  /** type:'cylinder' rim wall (spins with dish) */
+  const rimCol = {
+    type: 'cylinder',
+    id: 'bowl_rim',
+    tag: 'rim',
+    position: { x: 0, y: 5.5, z: 0 },
+    radius: ARENA_RADIUS + 0.4,
+    height: 0.8,
+    rotation: { x: 0, y: 0, z: 0 },
+    restitution: 0.45,
+    hollow: true,
+    innerRadius: ARENA_RADIUS - 0.5,
+  };
+  colliders.push(rimCol);
+  rotatingColliderIds.add(rimCol.id);
+
+  // Slope bands — rotate with dish
+  [12, 18, 23].forEach((r, i) => {
+    const id = `bowl_band_${i}`;
+    colliders.push({
+      type: 'cylinder',
+      id,
+      tag: 'bowl',
+      position: { x: 0, y: 1 + i * 1.6, z: 0 },
+      radius: r,
+      height: 0.5,
+      rotation: { x: 0, y: 0, z: 0 },
+      restitution: 0.35,
+      hollow: true,
+      innerRadius: r - 2,
+    });
+    rotatingColliderIds.add(id);
+  });
+
+  // Podium collider (rotates with dish)
+  const podiumCol = {
+    type: 'cylinder',
+    id: 'podium',
+    tag: 'obstacle',
+    position: { x: 0, y: 0.35, z: 0 },
+    radius: 2.6,
+    height: 0.55,
+    rotation: { x: 0, y: 0, z: 0 },
+    restitution: 0.3,
+  };
+  colliders.push(podiumCol);
+  rotatingColliderIds.add(podiumCol.id);
+
+  // Cage: box segments around perimeter (static, tall)
+  const WALL_SEGS = 16;
+  const wallDepth = 0.55;
+  const wallWidth = (2 * Math.PI * CAGE_RADIUS) / WALL_SEGS + 0.15;
+  for (let i = 0; i < WALL_SEGS; i++) {
+    const a = (i / WALL_SEGS) * Math.PI * 2;
+    const x = Math.cos(a) * CAGE_RADIUS;
+    const z = Math.sin(a) * CAGE_RADIUS;
+    colliders.push({
+      type: 'box',
+      id: `cage_wall_${i}`,
+      tag: 'wall',
+      kind: 'cage',
+      position: { x, y: CAGE_Y, z },
+      size: { x: wallWidth, y: CAGE_HEIGHT, z: wallDepth },
+      rotation: { x: 0, y: -a + Math.PI / 2, z: 0 },
+      restitution: 0.25,
+    });
+  }
+  colliders.push({
+    type: 'cylinder',
+    id: 'cage_top_ring',
+    tag: 'wall',
+    kind: 'cage',
+    position: { x: 0, y: CAGE_HEIGHT + 0.4, z: 0 },
+    radius: CAGE_RADIUS + 0.3,
+    height: 0.6,
+    rotation: { x: 0, y: 0, z: 0 },
+    restitution: 0.2,
+    hollow: true,
+    innerRadius: CAGE_RADIUS - 1.2,
+  });
+
+  const spawnPoints = spawnRing(8, 5, 1.0, ['red', 'blue']);
+
+  // Dense mid-radius mystery boxes (local bowl space — physics may follow bowl)
+  const mysteryBoxSpawns = [];
+  const mbRadii = [9, 13, 17];
+  let mbIdx = 0;
+  for (const r of mbRadii) {
+    const count = r < 12 ? 4 : 6;
+    for (let i = 0; i < count; i++) {
+      const a = (i / count) * Math.PI * 2 + (r > 12 ? 0.2 : 0);
+      const y = Math.pow(r / ARENA_RADIUS, 2.1) * 5.5 + 1.1;
+      mysteryBoxSpawns.push({
+        x: Math.cos(a) * r,
+        y,
+        z: Math.sin(a) * r,
+        id: `mb_bey_${mbIdx++}`,
+      });
+    }
+  }
+
+  /**
+   * Smooth Y-spin of the dish + mild centrifugal for grounded karts.
+   * Cage stays world-fixed. Root group is never repositioned.
+   */
+  function update(delta, world = {}) {
+    const dt = clampDt(delta);
+    bowlGroup.rotation.y += angularVelocity * dt;
+
+    for (const c of colliders) {
+      if (!rotatingColliderIds.has(c.id)) continue;
+      if (!c.rotation) c.rotation = { x: 0, y: 0, z: 0 };
+      c.rotation.y = bowlGroup.rotation.y;
+    }
+
+    const ctx = world || {};
+    const list = ctx.karts || ctx.players || [];
+    for (const item of list) {
+      const pos = item.state?.position || item.position;
+      const vel = item.state?.velocity || item.velocity;
+      if (!pos) continue;
+      const grounded =
+        item.state?.grounded !== undefined ? item.state.grounded : (pos.y ?? 0) < 4.0;
+      if (!grounded) continue;
+      const dx = pos.x ?? 0;
+      const dz = pos.z ?? 0;
+      const r = Math.sqrt(dx * dx + dz * dz);
+      if (r < 0.25 || r > ARENA_RADIUS) continue;
+      const mag = angularVelocity * angularVelocity * r * centrifugalScale;
+      const inv = 1 / r;
+      const ax = dx * inv * mag;
+      const az = dz * inv * mag;
+      if (typeof ctx.applyForce === 'function') {
+        ctx.applyForce(item.id ?? item.state?.id ?? 'local', { x: ax, y: 0, z: az });
+      } else if (vel) {
+        vel.x = (vel.x || 0) + ax * dt;
+        vel.z = (vel.z || 0) + az * dt;
+      }
+    }
+  }
+
+  return {
+    name,
+    id: 'beybladeArena',
+    group,
+    colliders,
+    spawnPoints,
+    mysteryBoxSpawns,
+    arenaRadius: ARENA_RADIUS,
+    cageRadius: CAGE_RADIUS,
+    update,
+    setAngularVelocity(v) {
+      angularVelocity = v;
+    },
+    getAngularVelocity() {
+      return angularVelocity;
+    },
+    dispose() {
+      disposeObject3D(group);
+      disposables.forEach((d) => d.dispose?.());
+    },
+  };
+}
+
+/** Convenience map of id → loader */
+export const LOADERS = {
+  gravelPit: loadGravelPit,
+  skyPinball: loadSkyPinball,
+  beybladeArena: loadBeybladeArena,
+};
+
+/**
+ * Dispatcher — load map by id (gravelPit | skyPinball | beybladeArena).
+ * @param {any} THREE
+ * @param {string} mapId
+ */
+export function loadMap(THREE, mapId) {
+  const id = LOADERS[mapId] ? mapId : 'gravelPit';
+  return LOADERS[id](THREE);
+}
+
+export function createMapById(id, THREE) {
+  return loadMap(THREE, id);
+}
+
+export default {
+  loadGravelPit,
+  loadSkyPinball,
+  loadBeybladeArena,
+  loadMap,
+  createMapById,
+  LOADERS,
+};
