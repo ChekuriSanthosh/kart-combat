@@ -29,11 +29,12 @@ const roster = (page) => page.$$eval('#leaderboard-list li', (n) => n.map((e) =>
 
 try {
   // ── Host opens a private match ──
+  // A private match now gathers in a waiting room first, so the code is read
+  // from there; the in-match HUD only appears once the host starts.
   const host = await openClient('HostRacer');
   await host.page.click('#btn-create-party');
-  await host.page.waitForSelector('#hud:not(.hidden)');
-  await host.page.waitForSelector('#invite:not(.hidden)');
-  const code = (await host.page.textContent('#invite-code')).trim();
+  await host.page.waitForSelector('#waiting:not(.hidden)');
+  const code = (await host.page.textContent('#waiting-code')).trim();
 
   if (/^[A-Z0-9]{5}$/.test(code)) ok(`host got match code ${code}`);
   else fail(`match code looks wrong: "${code}"`);
@@ -50,7 +51,7 @@ try {
   // into the canvas and shoots a rocket instead. Nothing visual catches that,
   // so assert on what actually receives the click.
   const hitTarget = await host.page.evaluate(() => {
-    const el = document.getElementById('btn-invite');
+    const el = document.getElementById('btn-waiting-invite');
     const r = el.getBoundingClientRect();
     const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
     return hit === el || el.contains(hit) ? 'button' : `<${hit?.tagName.toLowerCase()}${hit?.id ? '#' + hit.id : ''}>`;
@@ -59,7 +60,7 @@ try {
   else fail(`copy invite button is unclickable — clicks land on ${hitTarget}`);
 
   // And pressing it must put the link somewhere, not throw.
-  await host.page.click('#btn-invite');
+  await host.page.click('#btn-waiting-invite');
   await host.page.waitForTimeout(500);
   const copyToast = (await host.page.textContent('#toast')) || '';
   if (/copied|join=/i.test(copyToast)) ok(`copy button responded: "${copyToast.trim().slice(0, 48)}"`);
@@ -70,12 +71,18 @@ try {
   const guestErrors = [];
   guest.on('pageerror', (e) => guestErrors.push(e.message));
   await guest.goto(`${BASE}/?join=${code}`, { waitUntil: 'networkidle' });
-  await guest.waitForSelector('#hud:not(.hidden)', { timeout: 10000 });
+  await guest.waitForSelector('#waiting:not(.hidden)', { timeout: 10000 });
   ok('guest joined straight from the link, no lobby');
 
-  const guestCode = (await guest.textContent('#invite-code')).trim();
+  const guestCode = (await guest.textContent('#waiting-code')).trim();
   if (guestCode === code) ok('guest is in the same match');
   else fail(`guest is in match ${guestCode}, host is in ${code}`);
+
+  // ── Host starts, and only then does anyone drive ──
+  await host.page.click('#btn-start-match');
+  await host.page.waitForSelector('#hud:not(.hidden)', { timeout: 10000 });
+  await guest.waitForSelector('#hud:not(.hidden)', { timeout: 10000 });
+  ok('host start puts both players into the match');
 
   // Both should see two humans in a roster that also contains bots.
   await host.page.waitForTimeout(1200);
@@ -101,8 +108,17 @@ try {
   const quick = await openClient('QuickPlayer');
   await quick.page.click('#btn-play');
   await quick.page.waitForSelector('#hud:not(.hidden)');
-  const quickCode = (await quick.page.textContent('#invite-code')).trim();
-  if (quickCode !== code) ok('quick play stays out of private matches');
+  // Quick play exposes no code at all now, so "did it land in the private
+  // room" is answered by whether it can see that room's players.
+  const quickShowsCode = await quick.page.evaluate(() => {
+    const el = document.getElementById('invite');
+    return !!el && !el.classList.contains('hidden');
+  });
+  if (!quickShowsCode) ok('quick play exposes no match code');
+  else fail('quick play is still showing an invite code');
+
+  const quickRoster = (await roster(quick.page)).join(' ');
+  if (!quickRoster.includes('HostRacer')) ok('quick play stays out of private matches');
   else fail('quick play dropped a stranger into the private match');
 
   const allErrors = [...host.errors, ...guestErrors, ...stray.errors, ...quick.errors];

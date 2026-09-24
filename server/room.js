@@ -7,7 +7,7 @@
 import {
   MAX_HP, RESPAWN_DELAY, SPAWN_INVULN, SIM_DT,
   DEFAULT_MAP_ID, clampMaxPlayers, unpackInput, KART_COLORS,
-  CHEAT, CHEAT_DURATION, CHEAT_HOP_SPEED, CHEAT_COOLDOWN,
+  CHEAT, CHEAT_DURATION, CHEAT_HOP_SPEED, CHEAT_COOLDOWN, ROOM_STATUS,
 } from '../shared/constants.js';
 import { createKartState, createInput, stepKart, resolveKartPair, applyImpulse, KART } from '../shared/physics.js';
 import { getMap, getSpawn, applyEnvironment } from '../shared/maps/index.js';
@@ -42,10 +42,17 @@ export function createRoom(id, mapId, maxPlayers, { isPrivate = false, difficult
   const map = getMap(mapId || DEFAULT_MAP_ID);
   return {
     id,
-    /** Shown to players and used in invite links. */
+    /** Shown to players and used in invite links. Private rooms only. */
     code: id,
     /** Private rooms are reachable by code only, never by quick match. */
     isPrivate,
+    /**
+     * Private rooms gather first so the host can see who arrived; quick-play
+     * rooms are live from the moment they exist.
+     */
+    status: isPrivate ? ROOM_STATUS.LOBBY : ROOM_STATUS.PLAYING,
+    /** Host's choice in the waiting room: fill empty seats with bots? */
+    fillWithBots: true,
     /** How sharp the bots are: 'low' | 'medium' | 'high'. */
     difficulty: isDifficulty(difficulty) ? difficulty : DEFAULT_DIFFICULTY,
     /** Crate flow field, rebuilt by the AI only when the live crate set moves. */
@@ -388,6 +395,57 @@ export function roster(room) {
   return [...room.players.values()].map((p) => ({
     i: p.id, n: p.name, ai: p.isAi, c: p.color,
   }));
+}
+
+/**
+ * Everything the waiting room needs to draw itself. Deliberately separate from
+ * `snapshot`: a room that has not started has no meaningful kart state, and
+ * sending 20 of those a second to people staring at a list of names would be
+ * pure waste.
+ */
+export function lobbyState(room) {
+  return {
+    code: room.code,
+    status: room.status,
+    hostId: room.hostId,
+    mapId: room.mapId,
+    difficulty: room.difficulty,
+    maxPlayers: room.maxPlayers,
+    fillWithBots: room.fillWithBots,
+    humans: humanCount(room),
+    players: [...room.players.values()]
+      .filter((p) => !p.isAi)
+      .map((p) => ({ i: p.id, n: p.name, c: p.color, host: p.id === room.hostId })),
+  };
+}
+
+/**
+ * Take a gathered room live.
+ *
+ * Everyone present is reseated from scratch so nobody starts the match halfway
+ * through the arena or carrying a weapon they picked up while waiting, and the
+ * bots the host asked for are added only now — a lobby full of bots would make
+ * it impossible to see who had actually turned up.
+ */
+export function startMatch(room) {
+  if (room.status === ROOM_STATUS.PLAYING) return false;
+  room.status = ROOM_STATUS.PLAYING;
+  room.clock = 0;
+  room.projectiles.length = 0;
+  room.events.length = 0;
+  room.boxes = room.map.boxes.map((b) => ({ x: b.x, y: b.y, z: b.z, alive: true, respawnAt: 0 }));
+
+  if (room.fillWithBots) fillBots(room);
+
+  let i = 0;
+  for (const p of room.players.values()) {
+    p.score = 0;
+    p.kills = 0;
+    p.deaths = 0;
+    respawn(room, p, i++);
+  }
+  room.rosterDirty = true;
+  return true;
 }
 
 export function snapshot(room) {

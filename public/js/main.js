@@ -10,6 +10,7 @@ import * as THREE from 'three';
 import { getMap } from '/shared/maps/index.js';
 import {
   EVENT, MAX_HP, JOIN_MODE, ROOM_CODE_LENGTH, normalizeRoomCode, CHEAT,
+  ROOM_STATUS,
 } from '/shared/constants.js';
 import { WEAPONS } from '/shared/weapons.js';
 import { getDifficulty } from '/shared/ai/difficulty.js';
@@ -78,6 +79,10 @@ let rosterById = new Map();
 let latestSnapshot = null;
 let localSnapshot = null;
 let joined = false;
+/** True while sitting in a private room that has not started yet. */
+let waitingRoom = false;
+/** Last waiting-room state from the server, or null outside one. */
+let lobbyInfo = null;
 let lastFrame = performance.now();
 let elapsed = 0;
 const shake = { amount: 0 };
@@ -111,6 +116,9 @@ const CHEAT_KEYS = {
 };
 
 window.addEventListener('keydown', (e) => {
+  // The waiting room has a name field and buttons in it; driving keys and
+  // cheats have no business firing while someone is typing or clicking there.
+  if (waitingRoom) return;
   if (e.shiftKey && joined) {
     const cheat = CHEAT_KEYS[e.code];
     if (cheat) {
@@ -272,20 +280,113 @@ document.getElementById('btn-fullscreen')?.addEventListener('click', () => {
   else document.exitFullscreen?.();
 });
 
+/* ── Waiting room ───────────────────────────────────────────────────── */
+const waitingEl = document.getElementById('waiting');
+const waitingCodeEl = document.getElementById('waiting-code');
+const waitingListEl = document.getElementById('waiting-list');
+const waitingCountEl = document.getElementById('waiting-count');
+const waitingHostEl = document.getElementById('waiting-host');
+const waitingGuestEl = document.getElementById('waiting-guest');
+const waitingBotsEl = document.getElementById('waiting-bots');
+const startMatchBtn = document.getElementById('btn-start-match');
+
+document.getElementById('btn-waiting-invite')?.addEventListener('click', async () => {
+  const link = inviteLink(waitingCodeEl.textContent);
+  if (await copyText(link)) toast('Invite link copied');
+  else toast(link, 8000);
+});
+
+startMatchBtn?.addEventListener('click', () => socket.emit(EVENT.START));
+
+waitingBotsEl?.addEventListener('change', () => {
+  socket.emit(EVENT.CONFIG, { fillWithBots: waitingBotsEl.checked });
+});
+
+document.getElementById('btn-waiting-leave')?.addEventListener('click', () => {
+  // Drop the ?join= code too, or a refresh would walk straight back in.
+  window.location.href = window.location.pathname;
+});
+
+function renderWaiting(state) {
+  if (!waitingEl) return;
+  waitingCodeEl.textContent = state.code || '';
+  waitingCountEl.textContent = `${state.players.length} / ${state.maxPlayers}`;
+
+  waitingListEl.innerHTML = '';
+  for (const p of state.players) {
+    const li = document.createElement('li');
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = `#${(p.c ?? 0x888888).toString(16).padStart(6, '0')}`;
+    const name = document.createElement('span');
+    name.textContent = p.n;
+    li.append(swatch, name);
+    if (p.i === localId) {
+      const you = document.createElement('span');
+      you.className = 'you';
+      you.textContent = '(you)';
+      li.append(you);
+    }
+    if (p.host) {
+      const badge = document.createElement('span');
+      badge.className = 'host-badge';
+      badge.textContent = 'Host';
+      li.append(badge);
+    }
+    waitingListEl.appendChild(li);
+  }
+
+  // Only the host gets the controls; everyone else is told what they are
+  // waiting for rather than shown a button that would do nothing.
+  const isHost = state.hostId === localId;
+  waitingHostEl?.classList.toggle('hidden', !isHost);
+  waitingGuestEl?.classList.toggle('hidden', isHost);
+  if (isHost && waitingBotsEl) waitingBotsEl.checked = !!state.fillWithBots;
+}
+
+socket.on(EVENT.LOBBY, (state) => {
+  lobbyInfo = state;
+  if (waitingRoom) renderWaiting(state);
+});
+
+socket.on(EVENT.STARTED, () => {
+  waitingRoom = false;
+  waitingEl?.classList.add('hidden');
+  hudEl.classList.remove('hidden');
+  // The server reseats everyone on start, so drop the history gathered while
+  // waiting. The local kart is corrected by the first snapshot — that is a
+  // teleport-sized move, which the predictor deliberately snaps rather than
+  // slides, and it lands under the "Go!" toast where nobody is looking.
+  interp.clear();
+  canvas.focus();
+  toast('Go!', 1200);
+});
+
 /* ── Networking ─────────────────────────────────────────────────────── */
 socket.on(EVENT.WELCOME, (welcome) => {
   localId = welcome.id;
   buildWorld(welcome);
   joined = true;
   lobbyEl.classList.add('hidden');
-  hudEl.classList.remove('hidden');
-  canvas.focus();
+
+  // A private room you arrive at before it starts shows the waiting room
+  // instead of the HUD. Arriving at one already in progress — or any quick
+  // match — goes straight to driving.
+  waitingRoom = welcome.status === ROOM_STATUS.LOBBY;
+  waitingEl?.classList.toggle('hidden', !waitingRoom);
+  hudEl.classList.toggle('hidden', waitingRoom);
+  if (!waitingRoom) canvas.focus();
 
   // The code is worth showing for any match, not just private ones — it is how
   // you pull a friend into the game you are already playing.
+  // Codes are a private-room concept now. Quick play has nothing to invite
+  // anyone to — the next person to press Play is routed to whichever public
+  // room is busiest, not to this one — so it shows no code at all.
   if (welcome.code && inviteCodeEl) {
     inviteCodeEl.textContent = welcome.code;
     inviteEl?.classList.remove('hidden');
+  } else {
+    inviteEl?.classList.add('hidden');
   }
   // The room may not be the one you asked for — quick match drops you into an
   // existing game — so report the skill level actually in force, not the pick.
@@ -296,8 +397,9 @@ socket.on(EVENT.WELCOME, (welcome) => {
     if (difficultyInput && welcome.difficulty) difficultyInput.value = welcome.difficulty;
   }
   // Keep the address bar pointing at this match so a refresh or a copied URL
-  // lands back in the same place.
-  history.replaceState(null, '', inviteLink(welcome.code));
+  // lands back in the same place — but only for a private room, which is the
+  // only kind a code can take you back to. A quick match leaves the URL clean.
+  history.replaceState(null, '', welcome.code ? inviteLink(welcome.code) : window.location.pathname);
 });
 
 socket.on('roster', (list) => {
@@ -518,7 +620,7 @@ function frame(now) {
   lastFrame = now;
   elapsed += dt;
 
-  if (joined && predictor && world) {
+  if (joined && predictor && world && !waitingRoom) {
     // ── Local kart: predict, then ship the commands we just simulated ──
     const commands = predictor.advance(dt, input);
     if (commands.length) {

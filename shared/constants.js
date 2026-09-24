@@ -10,11 +10,32 @@ export const EVENT = Object.freeze({
   LEAVE: 'player:leave',
   CHEAT: 'player:cheat',
 
+  // client → server, private-room lobby only
+  START: 'room:start',
+  CONFIG: 'room:config',
+
   // server → client
   WELCOME: 'player:welcome',
   SNAPSHOT: 'world:snapshot',
   EVENTS: 'world:events',
+  /** Waiting-room state: who is here, what the host has picked. */
+  LOBBY: 'room:lobby',
+  /** The host pressed start; the match is now live. */
+  STARTED: 'room:started',
   ERROR: 'error',
+});
+
+/**
+ * A room is either gathering players or running a match.
+ *
+ * Quick-play rooms are born PLAYING and never gather — clicking Play means you
+ * want to drive, not to wait. Private rooms are born in LOBBY so the host can
+ * see who has turned up before starting. Anyone arriving at a PLAYING room
+ * joins mid-match, whichever kind it is.
+ */
+export const ROOM_STATUS = Object.freeze({
+  LOBBY: 'lobby',
+  PLAYING: 'playing',
 });
 
 export const MAP_IDS = Object.freeze(['gravelPit', 'skyPinball', 'beybladeArena']);
@@ -62,8 +83,23 @@ export const SIM_DT = 1 / SIM_HZ;
 export const SNAPSHOT_HZ = 20;
 export const SNAPSHOT_MS = 1000 / SNAPSHOT_HZ;
 
-/** Clients render remote karts this far in the past to hide jitter. */
-export const INTERP_DELAY_MS = 110;
+/**
+ * How far in the past clients render remote karts.
+ *
+ * This is a *time* buffer, but players experience it as a *distance*: at the
+ * 38 m/s boost ceiling a fixed 110 ms puts a rival 4.2 m behind where the
+ * server has them, and on the spinning dish the floor alone carries everyone
+ * fast enough that the gap never closes. So rather than one number tuned on a
+ * localhost connection, the client measures the jitter its own link actually
+ * has and buys only as much buffer as that link needs.
+ *
+ * The floor is just over one snapshot interval — below that there is routinely
+ * no newer snapshot to interpolate toward, and playback stalls.
+ */
+export const INTERP_MIN_MS = 55;
+export const INTERP_MAX_MS = 260;
+/** Starting point before enough snapshots have arrived to measure anything. */
+export const INTERP_START_MS = 110;
 
 export const MAX_HP = 100;
 export const RESPAWN_DELAY = 2.0;

@@ -13,7 +13,8 @@
     "playtest": "./scripts/with-server.sh node scripts/playtest.mjs",
     "party": "./scripts/with-server.sh node scripts/partytest.mjs",
     "smooth": "./scripts/with-server.sh node scripts/smoothcheck.mjs",
-    "test": "node scripts/simcheck.mjs && node scripts/wallcheck.mjs"
+    "test": "node scripts/simcheck.mjs && node scripts/wallcheck.mjs",
+    "lobby": "./scripts/with-server.sh node scripts/lobbytest.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",

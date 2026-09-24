@@ -580,3 +580,160 @@ kbd {
   .racer-panel { width: 100%; }
   #hint { display: none; }
 }
+
+/* ── Waiting room ────────────────────────────────────────────────── */
+/* Private matches gather here before starting. Sits above the HUD and the
+   lobby so it reads as a modal step, not another panel. */
+#waiting {
+  position: fixed;
+  inset: 0;
+  z-index: 25;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(8, 12, 22, 0.82);
+  backdrop-filter: blur(6px);
+}
+.waiting-card {
+  width: min(460px, 100%);
+  max-height: 92vh;
+  overflow-y: auto;
+  padding: 22px 24px;
+  border-radius: 20px;
+  background: var(--panel, rgba(17, 24, 39, 0.96));
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+  color: var(--text, #fff);
+}
+.waiting-card h2 { margin: 0 0 4px; font-size: 1.5rem; }
+.waiting-sub { margin: 0 0 16px; opacity: 0.65; font-size: 0.85rem; }
+
+.waiting-code {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  flex-wrap: wrap;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.waiting-code .label {
+  font-size: 0.64rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+#waiting-code {
+  font-size: 1.35rem;
+  font-weight: 900;
+  letter-spacing: 0.22em;
+  color: var(--play, #ffd166);
+}
+#btn-waiting-invite {
+  margin-left: auto;
+  padding: 0.35rem 0.75rem;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.1);
+}
+#btn-waiting-invite:hover { background: rgba(255, 255, 255, 0.2); border-color: #fff; }
+
+.waiting-players-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 6px;
+}
+.waiting-players-head h3 { margin: 0; font-size: 0.95rem; }
+#waiting-count { font-size: 0.78rem; opacity: 0.6; }
+#waiting-list {
+  list-style: none;
+  margin: 0 0 18px;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 34vh;
+  overflow-y: auto;
+}
+#waiting-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 0.9rem;
+}
+#waiting-list .swatch {
+  width: 12px; height: 12px;
+  border-radius: 4px;
+  flex: none;
+}
+#waiting-list .host-badge {
+  margin-left: auto;
+  font-size: 0.62rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: rgba(255, 209, 102, 0.18);
+  color: #ffd166;
+}
+#waiting-list .you { opacity: 0.75; font-size: 0.75rem; }
+
+.waiting-toggle {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-bottom: 12px;
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+.waiting-toggle input { width: 16px; height: 16px; cursor: pointer; }
+
+#btn-start-match {
+  width: 100%;
+  padding: 0.8rem;
+  font: inherit;
+  font-size: 1rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  color: #10241a;
+  cursor: pointer;
+  border: none;
+  border-radius: 12px;
+  background: linear-gradient(180deg, #7ef7b0, #34d399);
+}
+#btn-start-match:hover { filter: brightness(1.07); }
+#btn-start-match:disabled { filter: grayscale(0.7); cursor: not-allowed; }
+
+.waiting-guest {
+  margin: 0;
+  padding: 12px;
+  text-align: center;
+  font-size: 0.88rem;
+  opacity: 0.75;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.05);
+}
+.waiting-leave {
+  display: block;
+  margin: 14px auto 0;
+  padding: 0.3rem 0.8rem;
+  font: inherit;
+  font-size: 0.78rem;
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  border: none;
+  background: none;
+  text-decoration: underline;
+}
+.waiting-leave:hover { color: #fff; }

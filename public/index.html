@@ -89,6 +89,42 @@
 
   </div>
 
+  <!-- ── Waiting room (private matches only) ───────────────────────── -->
+  <div id="waiting" class="hidden">
+    <div class="waiting-card">
+      <h2>Waiting to start</h2>
+      <p class="waiting-sub">Share the code and your friends can drop straight in.</p>
+
+      <div class="waiting-code">
+        <span class="label">Match code</span>
+        <strong id="waiting-code"></strong>
+        <button type="button" id="btn-waiting-invite">Copy invite link</button>
+      </div>
+
+      <div class="waiting-players">
+        <div class="waiting-players-head">
+          <h3>Players</h3>
+          <span id="waiting-count"></span>
+        </div>
+        <ol id="waiting-list"></ol>
+      </div>
+
+      <!-- Host-only controls; hidden entirely for everyone else. -->
+      <div id="waiting-host" class="waiting-host hidden">
+        <label class="waiting-toggle">
+          <input type="checkbox" id="waiting-bots" checked />
+          <span>Fill empty seats with bots</span>
+        </label>
+        <button type="button" id="btn-start-match">START MATCH</button>
+      </div>
+      <p id="waiting-guest" class="waiting-guest hidden">
+        Waiting for the host to start the match…
+      </p>
+
+      <button type="button" id="btn-waiting-leave" class="waiting-leave">Leave</button>
+    </div>
+  </div>
+
   <!-- ── In-match HUD ──────────────────────────────────────────────── -->
   <div id="hud" class="hidden">
     <div id="leaderboard" class="hud-panel">

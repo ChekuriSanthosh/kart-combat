@@ -17,12 +17,13 @@ import {
   EVENT, SIM_DT, SIM_HZ, SNAPSHOT_MS,
   MAP_IDS, DEFAULT_MAP_ID, JOIN_MODE,
   ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, normalizeRoomCode,
-  DEFAULT_MAX_PLAYERS, clampMaxPlayers, CHEAT_CODES,
+  DEFAULT_MAX_PLAYERS, clampMaxPlayers, CHEAT_CODES, ROOM_STATUS,
 } from './shared/constants.js';
 import { getMap } from './shared/maps/index.js';
 import {
   createRoom, createPlayer, fillBots, removeOneBot, trimBots,
   humanCount, setMap, setDifficulty, stepRoom, snapshot, roster, applyCheat,
+  lobbyState, startMatch,
 } from './server/room.js';
 import { DEFAULT_DIFFICULTY, isDifficulty, getNavGrid } from './shared/ai/index.js';
 
@@ -59,7 +60,9 @@ function newRoomCode() {
 
 function openRoom(mapId, maxPlayers, isPrivate, difficulty) {
   const room = createRoom(newRoomCode(), mapId, maxPlayers, { isPrivate, difficulty });
-  fillBots(room);
+  // A private room is still gathering, and filling it with bots up front would
+  // hide the only thing its host wants to see: who has actually arrived.
+  if (room.status === ROOM_STATUS.PLAYING) fillBots(room);
   rooms.set(room.id, room);
   return room;
 }
@@ -89,6 +92,8 @@ function findRoom({ mode, code, mapId, maxPlayers, difficulty }) {
   let best = null;
   for (const room of rooms.values()) {
     if (room.isPrivate || !hasSpace(room)) continue;
+    // Quick play means "put me in a match now", so only live ones qualify.
+    if (room.status !== ROOM_STATUS.PLAYING) continue;
     if (mapId && room.mapId !== mapId) continue;
     // Someone who asked for hard bots should not be dropped into an easy room.
     if (difficulty && room.difficulty !== difficulty) continue;
@@ -102,9 +107,15 @@ function adoptSettings(room, mapId, maxPlayers, difficulty) {
   if (humanCount(room) !== 0) return;
   room.maxPlayers = clampMaxPlayers(maxPlayers);
   trimBots(room);
-  fillBots(room);
+  if (room.status === ROOM_STATUS.PLAYING) fillBots(room);
   if (mapId && MAP_IDS.includes(mapId) && mapId !== room.mapId) setMap(room, mapId);
   setDifficulty(room, difficulty);
+}
+
+/** Push the waiting-room state to everyone still gathering in it. */
+function broadcastLobby(room) {
+  if (room.status !== ROOM_STATUS.LOBBY) return;
+  io.to(room.id).emit(EVENT.LOBBY, lobbyState(room));
 }
 
 io.on('connection', (socket) => {
@@ -134,7 +145,7 @@ io.on('connection', (socket) => {
 
       const player = createPlayer(room, { name, isAi: false, socketId: socket.id });
       if (!room.hostId) room.hostId = player.id;
-      fillBots(room);
+      if (room.status === ROOM_STATUS.PLAYING) fillBots(room);
 
       socket.join(room.id);
       index.set(socket.id, { roomId: room.id, playerId: player.id });
@@ -143,8 +154,12 @@ io.on('connection', (socket) => {
       socket.emit(EVENT.WELCOME, {
         id: player.id,
         roomId: room.id,
-        code: room.code,
+        // Only private rooms have a code worth showing. Quick play hands out no
+        // invite because there is nothing to invite anyone *to* — the next
+        // person to press Play lands in whichever public room is busiest.
+        code: room.isPrivate ? room.code : null,
         isPrivate: room.isPrivate,
+        status: room.status,
         difficulty: room.difficulty,
         isHost: room.hostId === player.id,
         mapId: room.mapId,
@@ -156,6 +171,7 @@ io.on('connection', (socket) => {
       });
       io.to(room.id).emit('roster', roster(room));
       room.rosterDirty = false;
+      broadcastLobby(room);
     } catch (err) {
       console.error('join failed', err);
       socket.emit(EVENT.ERROR, { message: 'Join failed' });
@@ -176,6 +192,44 @@ io.on('connection', (socket) => {
       player.queue.push({ seq: c.seq, bits: c.bits & 0x3f });
       if (player.queue.length > 60) player.queue.shift();
     }
+  });
+
+  /** Look up the caller's room, and the player record, only if they host it. */
+  function asHost(socket) {
+    const ref = index.get(socket.id);
+    if (!ref) return null;
+    const room = rooms.get(ref.roomId);
+    if (!room || room.hostId !== ref.playerId) return null;
+    return room;
+  }
+
+  socket.on(EVENT.START, () => {
+    const room = asHost(socket);
+    // Only the host, only a room that has not already started. Everyone else
+    // asking is ignored rather than errored — a second click on a laggy
+    // connection is not worth a message.
+    if (!room || room.status !== ROOM_STATUS.LOBBY) return;
+    startMatch(room);
+    io.to(room.id).emit('roster', roster(room));
+    io.to(room.id).emit(EVENT.STARTED, { mapId: room.mapId, difficulty: room.difficulty });
+  });
+
+  socket.on(EVENT.CONFIG, (payload = {}) => {
+    const room = asHost(socket);
+    // Settings are the host's to change, and only while people are still
+    // gathering — swapping the arena mid-race would teleport everyone.
+    if (!room || room.status !== ROOM_STATUS.LOBBY) return;
+
+    if (typeof payload.fillWithBots === 'boolean') room.fillWithBots = payload.fillWithBots;
+    if (payload.maxPlayers !== undefined) {
+      const next = clampMaxPlayers(payload.maxPlayers);
+      // Never shrink below the people already standing in the room.
+      room.maxPlayers = Math.max(next, humanCount(room));
+    }
+    if (MAP_IDS.includes(payload.mapId) && payload.mapId !== room.mapId) setMap(room, payload.mapId);
+    if (isDifficulty(payload.difficulty)) setDifficulty(room, payload.difficulty);
+
+    broadcastLobby(room);
   });
 
   socket.on(EVENT.CHEAT, (payload) => {
@@ -209,8 +263,11 @@ function leave(socket) {
     room.hostId = next ? next.id : null;
   }
 
-  fillBots(room);
+  if (room.status === ROOM_STATUS.PLAYING) fillBots(room);
   io.to(room.id).emit('roster', roster(room));
+  // Someone leaving the waiting room changes who is listed in it, and may have
+  // handed the host badge to somebody else.
+  broadcastLobby(room);
 
   // Rooms are cheap; an abandoned one is just bots burning CPU. Keep a private
   // room alive briefly so a host who refreshes does not lose their invite code.
@@ -240,7 +297,12 @@ setInterval(() => {
   accumulator += elapsed;
   let steps = 0;
   while (accumulator >= SIM_DT && steps < 5) {
-    for (const room of rooms.values()) stepRoom(room, SIM_DT);
+    for (const room of rooms.values()) {
+      // A room still gathering has nothing to simulate: its karts are parked
+      // at spawn and will be reseated the moment the host starts anyway.
+      if (room.status !== ROOM_STATUS.PLAYING) continue;
+      stepRoom(room, SIM_DT);
+    }
     accumulator -= SIM_DT;
     steps++;
   }
@@ -250,6 +312,9 @@ setInterval(() => {
   if (sinceSnapshot >= SNAPSHOT_MS) {
     sinceSnapshot = 0;
     for (const room of rooms.values()) {
+      // Nobody in a waiting room needs twenty kart snapshots a second. They
+      // get lobby updates when something actually changes instead.
+      if (room.status !== ROOM_STATUS.PLAYING) continue;
       if (room.rosterDirty) {
         io.to(room.id).emit('roster', roster(room));
         room.rosterDirty = false;
