@@ -4,489 +4,33 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kart Combat</title>
-  <style>
-    :root {
-      --panel: rgba(12, 16, 24, 0.78);
-      --panel-border: rgba(255, 255, 255, 0.12);
-      --text: #f2f5fa;
-      --muted: #9aa7bd;
-      --accent: #4fd1c5;
-      --danger: #ef4444;
-      --ok: #22c55e;
-      --play: #ff7a18;
-      --play-deep: #e85d00;
-      --chip: rgba(255,255,255,0.14);
-    }
-    * { box-sizing: border-box; margin: 0; padding: 0; }
-    html, body {
-      width: 100%; height: 100%; overflow: hidden;
-      background: #0b0f17; color: var(--text);
-      font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Comic Sans MS", sans-serif;
-    }
-    #game {
-      display: block; width: 100vw; height: 100vh;
-      outline: none; background: #111;
-    }
-
-    /* ── Smash Karts–style arcade lobby ── */
-    #map-select {
-      position: fixed; inset: 0; z-index: 20;
-      overflow: hidden;
-      background:
-        radial-gradient(ellipse 120% 80% at 50% -10%, #7dd3fc 0%, transparent 55%),
-        radial-gradient(ellipse 90% 70% at 80% 100%, #fbbf24 0%, transparent 45%),
-        linear-gradient(180deg, #38bdf8 0%, #7dd3fc 28%, #86efac 62%, #fde68a 100%);
-      color: #1e293b;
-    }
-    #map-select.hidden { display: none; }
-
-    /* Cartoon cloud blobs */
-    #map-select::before,
-    #map-select::after {
-      content: "";
-      position: absolute;
-      border-radius: 50%;
-      background: rgba(255,255,255,0.55);
-      filter: blur(2px);
-      pointer-events: none;
-    }
-    #map-select::before {
-      width: 220px; height: 90px; top: 12%; left: 8%;
-      box-shadow: 80px 20px 0 10px rgba(255,255,255,0.45), 160px -10px 0 -5px rgba(255,255,255,0.4);
-    }
-    #map-select::after {
-      width: 180px; height: 70px; top: 18%; right: 10%;
-      box-shadow: -70px 15px 0 8px rgba(255,255,255,0.4), 60px 30px 0 0 rgba(255,255,255,0.35);
-    }
-
-    .lobby-sky-hill {
-      position: absolute; left: -5%; right: -5%; bottom: -8%;
-      height: 38%;
-      background: linear-gradient(180deg, #4ade80 0%, #22c55e 40%, #15803d 100%);
-      border-radius: 50% 50% 0 0 / 40% 40% 0 0;
-      z-index: 0;
-      box-shadow: inset 0 18px 0 rgba(255,255,255,0.15);
-    }
-
-    .lobby-layer { position: absolute; z-index: 1; }
-
-    /* Top-left XP + currency */
-    .lobby-top-left {
-      top: 14px; left: 14px;
-      display: flex; flex-direction: column; gap: 8px;
-      min-width: 210px;
-    }
-    .xp-card, .currency-row {
-      background: rgba(15, 23, 42, 0.55);
-      border: 2px solid rgba(255,255,255,0.35);
-      border-radius: 14px;
-      padding: 8px 10px;
-      color: #fff;
-      backdrop-filter: blur(6px);
-      box-shadow: 0 6px 18px rgba(0,0,0,0.2);
-    }
-    .xp-card .lvl {
-      font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.08em;
-      color: #fde68a; margin-bottom: 4px; font-weight: 700;
-    }
-    .xp-bar {
-      height: 12px; border-radius: 999px; overflow: hidden;
-      background: rgba(0,0,0,0.35); border: 1px solid rgba(255,255,255,0.2);
-    }
-    .xp-fill {
-      height: 100%; width: 62%;
-      background: linear-gradient(90deg, #22d3ee, #a78bfa, #f472b6);
-    }
-    .xp-meta { font-size: 0.7rem; color: #cbd5e1; margin-top: 3px; }
-    .currency-row { display: flex; gap: 8px; padding: 6px 8px; }
-    .chip {
-      display: inline-flex; align-items: center; gap: 6px;
-      background: var(--chip); border-radius: 999px;
-      padding: 4px 10px; font-weight: 700; font-size: 0.85rem;
-    }
-    .chip .ico {
-      width: 18px; height: 18px; border-radius: 50%;
-      display: inline-grid; place-items: center; font-size: 0.7rem;
-    }
-    .chip.coins .ico { background: #fbbf24; color: #78350f; }
-    .chip.gems .ico { background: #22d3ee; color: #0e7490; }
-
-    /* Left player card */
-    .lobby-left {
-      top: 50%; left: 18px; transform: translateY(-50%);
-      width: min(260px, 32vw);
-      display: flex; flex-direction: column; gap: 10px;
-    }
-    .player-card {
-      background: rgba(255,255,255,0.88);
-      border: 3px solid #fff;
-      border-radius: 18px;
-      padding: 14px;
-      box-shadow: 0 10px 28px rgba(0,0,0,0.18);
-    }
-    .player-card h2 {
-      font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.08em;
-      color: #64748b; margin-bottom: 6px;
-    }
-    .player-card label { display: block; font-size: 0.78rem; color: #475569; margin-bottom: 4px; }
-    #player-name {
-      width: 100%;
-      background: #f1f5f9; border: 2px solid #cbd5e1;
-      border-radius: 10px; padding: 0.55rem 0.75rem;
-      color: #0f172a; font-size: 1rem; font-weight: 650;
-    }
-    #player-name:focus { outline: none; border-color: #38bdf8; }
-    .customize-row { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
-    #btn-customize {
-      flex: 1;
-      border: none; border-radius: 12px;
-      padding: 0.55rem 0.8rem;
-      background: linear-gradient(180deg, #a78bfa, #7c3aed);
-      color: #fff; font-weight: 700; cursor: pointer;
-      box-shadow: 0 4px 0 #5b21b6;
-    }
-    #btn-customize:active { transform: translateY(2px); box-shadow: 0 2px 0 #5b21b6; }
-    #btn-customize:disabled { opacity: 0.75; cursor: not-allowed; }
-    #color-stub {
-      width: 36px; height: 36px; border-radius: 10px;
-      border: 3px solid #fff; box-shadow: 0 2px 8px rgba(0,0,0,0.2);
-      background: #e74c3c; cursor: pointer; padding: 0;
-    }
-
-    /* Center title + play */
-    .lobby-center {
-      inset: 0;
-      display: flex; flex-direction: column;
-      align-items: center; justify-content: center;
-      gap: 0.85rem; pointer-events: none;
-      padding-bottom: 4vh;
-    }
-    .lobby-center > * { pointer-events: auto; }
-    .lobby-title {
-      font-size: clamp(2rem, 6vw, 3.4rem);
-      font-weight: 900;
-      letter-spacing: 0.04em;
-      color: #fff;
-      text-shadow:
-        0 3px 0 #0ea5e9,
-        0 6px 0 #0369a1,
-        0 10px 24px rgba(0,0,0,0.25);
-      transform: rotate(-2deg);
-    }
-    .lobby-tagline {
-      margin-top: -0.4rem;
-      font-weight: 700;
-      color: #0f172a;
-      background: rgba(255,255,255,0.65);
-      padding: 4px 12px;
-      border-radius: 999px;
-      font-size: 0.85rem;
-    }
-    .player-count-control {
-      display: inline-flex;
-      align-items: center;
-      gap: 8px;
-      color: #0f172a;
-      font-weight: 800;
-      background: rgba(255,255,255,0.72);
-      padding: 6px 10px;
-      border-radius: 12px;
-    }
-    #player-count {
-      border: 2px solid #cbd5e1;
-      border-radius: 8px;
-      padding: 3px 6px;
-      color: #0f172a;
-      background: #fff;
-      font-weight: 750;
-      cursor: pointer;
-    }
-
-    #btn-play {
-      margin-top: 0.6rem;
-      min-width: min(320px, 70vw);
-      padding: 0.95rem 2rem;
-      font-size: clamp(1.6rem, 5vw, 2.4rem);
-      font-weight: 900;
-      letter-spacing: 0.08em;
-      color: #fff;
-      border: 4px solid #fff;
-      border-radius: 22px;
-      cursor: pointer;
-      background: linear-gradient(180deg, #ffb347 0%, var(--play) 45%, var(--play-deep) 100%);
-      box-shadow:
-        0 8px 0 #c2410c,
-        0 14px 28px rgba(234, 88, 12, 0.45);
-      text-shadow: 0 2px 0 rgba(0,0,0,0.25);
-      transition: transform 0.12s ease;
-    }
-    #btn-play:hover { transform: translateY(-2px) scale(1.02); }
-    #btn-play:active {
-      transform: translateY(4px);
-      box-shadow: 0 4px 0 #c2410c, 0 8px 16px rgba(234, 88, 12, 0.35);
-    }
-
-    .play-sub {
-      display: flex; gap: 10px; flex-wrap: wrap; justify-content: center;
-    }
-    .play-sub button {
-      border: 2px solid rgba(255,255,255,0.85);
-      background: rgba(15, 23, 42, 0.55);
-      color: #fff; font-weight: 750;
-      padding: 0.5rem 1.1rem;
-      border-radius: 12px; cursor: pointer;
-      backdrop-filter: blur(4px);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    }
-    .play-sub button:hover { background: rgba(15, 23, 42, 0.75); }
-
-    /* Map picker overlay / strip */
-    #map-picker {
-      position: absolute; left: 50%; bottom: 7%;
-      transform: translateX(-50%);
-      z-index: 2;
-      width: min(920px, 94vw);
-      display: none;
-      flex-direction: column; align-items: center; gap: 10px;
-    }
-    #map-picker.open { display: flex; }
-    #map-picker .picker-label {
-      font-weight: 800; color: #0f172a;
-      background: rgba(255,255,255,0.75);
-      padding: 4px 14px; border-radius: 999px; font-size: 0.85rem;
-    }
-    .map-cards {
-      display: flex; flex-wrap: wrap; gap: 12px; justify-content: center;
-    }
-    .map-card {
-      width: 200px;
-      padding: 0;
-      border: 3px solid #fff;
-      border-radius: 16px;
-      cursor: pointer;
-      text-align: left;
-      overflow: hidden;
-      background: #fff;
-      color: #0f172a;
-      box-shadow: 0 8px 20px rgba(0,0,0,0.18);
-      transition: transform 0.15s ease, box-shadow 0.15s, outline 0.15s;
-    }
-    .map-card:hover, .map-card:focus {
-      transform: translateY(-4px) scale(1.03);
-      box-shadow: 0 14px 28px rgba(0,0,0,0.22);
-      outline: none;
-    }
-    .map-card.selected {
-      outline: 3px solid #f97316;
-      box-shadow: 0 0 0 4px rgba(249, 115, 22, 0.35), 0 14px 28px rgba(0,0,0,0.22);
-    }
-    .map-art {
-      height: 88px; position: relative;
-      display: block;
-    }
-    .map-art.gravel {
-      background:
-        radial-gradient(circle at 30% 70%, #a8a29e 0 12px, transparent 13px),
-        radial-gradient(circle at 70% 60%, #78716c 0 10px, transparent 11px),
-        linear-gradient(180deg, #7dd3fc 0 42%, #ca8a04 42% 100%);
-    }
-    .map-art.gravel::after {
-      content: "";
-      position: absolute; left: 20%; right: 20%; bottom: 18%;
-      height: 28%;
-      background: #92400e;
-      border-radius: 40% 40% 20% 20%;
-      box-shadow: inset 0 6px 0 rgba(255,255,255,0.15);
-    }
-    .map-art.sky {
-      background:
-        radial-gradient(circle at 50% 80%, #f472b6 0 18px, transparent 19px),
-        radial-gradient(circle at 25% 55%, #a78bfa 0 14px, transparent 15px),
-        radial-gradient(circle at 75% 50%, #34d399 0 12px, transparent 13px),
-        linear-gradient(180deg, #38bdf8 0%, #e0f2fe 55%, #fff 100%);
-    }
-    .map-art.sky::before, .map-art.sky::after {
-      content: "";
-      position: absolute;
-      background: #fde68a;
-      border-radius: 8px;
-    }
-    .map-art.sky::before { left: 18%; bottom: 22%; width: 36%; height: 14px; }
-    .map-art.sky::after { right: 16%; bottom: 38%; width: 28%; height: 12px; }
-    .map-art.bey {
-      background:
-        radial-gradient(circle at 50% 58%, #e2e8f0 0 22%, #94a3b8 22% 38%, #334155 38% 52%, #0f172a 52% 100%),
-        linear-gradient(180deg, #1e293b, #0f172a);
-    }
-    .map-art.bey::after {
-      content: "";
-      position: absolute; inset: 18% 22%;
-      border: 3px dashed rgba(56, 189, 248, 0.7);
-      border-radius: 50%;
-      animation: spinSlow 8s linear infinite;
-    }
-    @keyframes spinSlow { to { transform: rotate(360deg); } }
-    .map-card .body { padding: 10px 12px 12px; }
-    .map-card h2 { font-size: 1rem; margin-bottom: 2px; }
-    .map-card span { font-size: 0.78rem; color: #64748b; line-height: 1.3; display: block; }
-
-    /* Bottom-right stubs */
-    .lobby-br {
-      right: 14px; bottom: 14px;
-      display: flex; gap: 8px;
-    }
-    .lobby-br button {
-      width: 48px; height: 48px;
-      border-radius: 14px;
-      border: 2px solid rgba(255,255,255,0.7);
-      background: rgba(15, 23, 42, 0.55);
-      color: #fff; font-size: 1.25rem;
-      cursor: pointer;
-      backdrop-filter: blur(4px);
-      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
-    }
-    .lobby-br button:hover { background: rgba(15, 23, 42, 0.8); }
-
-    /* Toast / settings stub */
-    #lobby-toast {
-      position: absolute; left: 50%; top: 18%;
-      transform: translateX(-50%);
-      z-index: 5;
-      display: none;
-      background: rgba(15, 23, 42, 0.9);
-      color: #fff; padding: 10px 16px;
-      border-radius: 12px; font-weight: 650;
-      box-shadow: 0 8px 24px rgba(0,0,0,0.3);
-    }
-    #lobby-toast.show { display: block; }
-
-    /* HUD (in-match) */
-    #hud {
-      position: fixed; inset: 0; z-index: 10; pointer-events: none;
-      color: var(--text);
-      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-    }
-    #hud.hidden { display: none; }
-    #hud .panel {
-      pointer-events: auto;
-      background: var(--panel);
-      border: 1px solid var(--panel-border);
-      border-radius: 12px;
-      backdrop-filter: blur(8px);
-      box-shadow: 0 8px 24px rgba(0,0,0,0.35);
-    }
-    #health-wrap {
-      position: absolute; left: 16px; bottom: 18px;
-      width: min(280px, 42vw); padding: 10px 12px;
-    }
-    #health-wrap label {
-      display: flex; justify-content: space-between;
-      font-size: 0.75rem; color: var(--muted); margin-bottom: 6px;
-      text-transform: uppercase; letter-spacing: 0.06em;
-    }
-    #health-bar {
-      height: 14px; border-radius: 999px; overflow: hidden;
-      background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.1);
-    }
-    #health-fill {
-      height: 100%; width: 100%;
-      background: linear-gradient(90deg, var(--ok), #84cc16);
-      transition: width 0.12s linear, background 0.2s ease;
-    }
-    #weapon-display {
-      position: absolute; left: 16px; bottom: 78px;
-      min-width: 140px; padding: 10px 14px;
-      font-size: 0.95rem;
-    }
-    #weapon-display .label {
-      font-size: 0.7rem; color: var(--muted); text-transform: uppercase;
-      letter-spacing: 0.06em; margin-bottom: 2px;
-    }
-    #weapon-display .value { font-weight: 650; color: var(--accent); }
-    #leaderboard {
-      position: absolute; top: 14px; right: 14px;
-      width: min(240px, 46vw); padding: 10px 12px 12px;
-      max-height: min(70vh, 520px); overflow: auto;
-    }
-    #leaderboard h3 {
-      font-size: 0.78rem; color: var(--muted);
-      text-transform: uppercase; letter-spacing: 0.08em;
-      margin-bottom: 8px;
-    }
-    #leaderboard ol {
-      list-style: none; counter-reset: lb;
-      display: flex; flex-direction: column; gap: 4px;
-    }
-    #leaderboard li {
-      counter-increment: lb;
-      display: grid; grid-template-columns: 22px 1fr auto auto; gap: 6px;
-      align-items: center;
-      font-size: 0.78rem; padding: 4px 6px; border-radius: 6px;
-    }
-    #leaderboard li::before {
-      content: counter(lb);
-      color: var(--muted); font-variant-numeric: tabular-nums;
-    }
-    #leaderboard li.me {
-      background: rgba(79, 209, 197, 0.15);
-      outline: 1px solid rgba(79, 209, 197, 0.35);
-    }
-    #leaderboard .name {
-      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-    }
-    #leaderboard .score { font-variant-numeric: tabular-nums; color: #fbbf24; }
-    #leaderboard .hp { font-variant-numeric: tabular-nums; color: var(--muted); min-width: 2.4em; text-align: right; }
-    #hint {
-      position: absolute; bottom: 18px; right: 16px;
-      padding: 8px 12px; font-size: 0.72rem; color: var(--muted);
-      pointer-events: none;
-    }
-
-    @media (max-width: 720px) {
-      .lobby-left { display: none; }
-      .lobby-top-left { transform: scale(0.9); transform-origin: top left; }
-      .map-card { width: 150px; }
-    }
-  </style>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff8a1f'/%3E%3Crect x='6' y='12' width='20' height='8' rx='3' fill='%23fff'/%3E%3Ccircle cx='10' cy='22' r='4' fill='%23222'/%3E%3Ccircle cx='22' cy='22' r='4' fill='%23222'/%3E%3C/svg%3E" />
+  <link rel="stylesheet" href="/css/game.css" />
   <script src="/socket.io/socket.io.js"></script>
+  <script type="importmap">
+    { "imports": { "three": "/vendor/three/three.module.js" } }
+  </script>
 </head>
 <body>
   <canvas id="game" tabindex="0"></canvas>
 
-  <div id="map-select">
-    <div class="lobby-sky-hill" aria-hidden="true"></div>
+  <!-- ── Lobby ─────────────────────────────────────────────────────── -->
+  <div id="lobby">
+    <div class="hill" aria-hidden="true"></div>
+    <div class="clouds" aria-hidden="true"><i></i><i></i><i></i></div>
 
-    <div class="lobby-layer lobby-top-left">
-      <div class="xp-card">
-        <div class="lvl">Level 12</div>
-        <div class="xp-bar"><div class="xp-fill"></div></div>
-        <div class="xp-meta">1,240 / 2,000 XP</div>
-      </div>
-      <div class="currency-row">
-        <span class="chip coins"><span class="ico">¢</span> 3,450</span>
-        <span class="chip gems"><span class="ico">◆</span> 128</span>
-      </div>
-    </div>
+    <header class="lobby-head">
+      <h1 class="logo">KART<span>COMBAT</span></h1>
+      <p class="tagline">Arena kart brawls · up to 15 racers</p>
+    </header>
 
-    <div class="lobby-layer lobby-left">
-      <div class="player-card">
-        <h2>Racer</h2>
+    <div class="lobby-body">
+      <section class="panel racer-panel">
+        <h2>Your racer</h2>
         <label for="player-name">Nickname</label>
-        <input id="player-name" type="text" maxlength="18" placeholder="Player" autocomplete="nickname" />
-        <div class="customize-row">
-          <button type="button" id="btn-customize" disabled title="Coming soon">Customize</button>
-          <input type="color" id="color-stub" value="#e74c3c" title="Kart color (stub)" aria-label="Kart color stub" />
-        </div>
-      </div>
-    </div>
-
-    <div class="lobby-layer lobby-center">
-      <h1 class="lobby-title">Kart Combat</h1>
-      <p class="lobby-tagline">Arcade arena · up to 15 racers</p>
-      <label class="player-count-control" for="player-count">
-        Players
-        <select id="player-count" aria-label="Players">
+        <input id="player-name" type="text" maxlength="18" placeholder="Racer" autocomplete="nickname" />
+        <label for="player-count">Racers in match</label>
+        <select id="player-count">
           <option value="2">2</option>
           <option value="4">4</option>
           <option value="6">6</option>
@@ -495,67 +39,108 @@
           <option value="12">12</option>
           <option value="15">15</option>
         </select>
-      </label>
-      <button type="button" id="btn-play">PLAY</button>
-      <div class="play-sub">
-        <button type="button" id="btn-create">Create</button>
-        <button type="button" id="btn-join">Join</button>
-      </div>
+        <label for="bot-difficulty">Bot skill</label>
+        <select id="bot-difficulty">
+          <option value="low">Easy — sloppy aim, slow to react</option>
+          <option value="medium" selected>Normal</option>
+          <option value="high">Hard — leads every shot</option>
+        </select>
+        <div class="controls-hint">
+          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span>
+          <span><kbd>Shift</kbd> drift</span>
+          <span><kbd>Space</kbd> fire</span>
+        </div>
+      </section>
+
+      <section class="panel map-panel">
+        <h2>Pick an arena</h2>
+        <div class="map-cards">
+          <button type="button" class="map-card selected" data-map="gravelPit">
+            <span class="art gravel"></span>
+            <strong>Gravel Pit</strong>
+            <em>Desert bowl, ramps &amp; cover</em>
+          </button>
+          <button type="button" class="map-card" data-map="skyPinball">
+            <span class="art sky"></span>
+            <strong>Sky Pinball</strong>
+            <em>Neon platforms over a void</em>
+          </button>
+          <button type="button" class="map-card" data-map="beybladeArena">
+            <span class="art bey"></span>
+            <strong>Beyblade Arena</strong>
+            <em>A stadium dish that spins</em>
+          </button>
+        </div>
+        <button type="button" id="btn-play">PLAY</button>
+
+        <div class="party">
+          <div class="party-or"><span>or play with friends</span></div>
+          <div class="party-actions">
+            <button type="button" id="btn-create-party">Create private match</button>
+            <form id="join-form">
+              <input id="join-code" type="text" maxlength="5" placeholder="Match code"
+                     autocomplete="off" autocapitalize="characters" spellcheck="false" />
+              <button type="submit" id="btn-join-code">Join</button>
+            </form>
+          </div>
+        </div>
+      </section>
     </div>
 
-    <div id="map-picker">
-      <div class="picker-label">Pick an arena</div>
-      <div class="map-cards">
-        <button type="button" class="map-card selected" data-map="gravelPit">
-          <span class="map-art gravel" aria-hidden="true"></span>
-          <span class="body">
-            <h2>Gravel Pit</h2>
-            <span>Dirt bowl, ramps &amp; rock cover.</span>
-          </span>
-        </button>
-        <button type="button" class="map-card" data-map="skyPinball">
-          <span class="map-art sky" aria-hidden="true"></span>
-          <span class="body">
-            <h2>Sky Pinball</h2>
-            <span>Cloud platforms &amp; bumper chaos.</span>
-          </span>
-        </button>
-        <button type="button" class="map-card" data-map="beybladeArena">
-          <span class="map-art bey" aria-hidden="true"></span>
-          <span class="body">
-            <h2>Beyblade</h2>
-            <span>Spinning dish — hold the center.</span>
-          </span>
-        </button>
-      </div>
-    </div>
-
-    <div class="lobby-layer lobby-br">
-      <button type="button" id="btn-settings" title="Settings">⚙</button>
-      <button type="button" id="btn-fullscreen" title="Fullscreen">⛶</button>
-    </div>
-
-    <div id="lobby-toast" role="status"></div>
   </div>
 
+  <!-- ── In-match HUD ──────────────────────────────────────────────── -->
   <div id="hud" class="hidden">
-    <div id="leaderboard" class="panel">
-      <h3>Leaderboard</h3>
+    <div id="leaderboard" class="hud-panel">
+      <h3>Scores</h3>
       <ol id="leaderboard-list"></ol>
     </div>
-    <div id="weapon-display" class="panel">
-      <div class="label">Weapon</div>
-      <div class="value" id="weapon-name">Empty</div>
+
+    <div id="kill-feed"></div>
+
+    <div id="invite" class="hud-panel hidden">
+      <span class="label">Match code</span>
+      <strong id="invite-code"></strong>
+      <button type="button" id="btn-invite">Copy invite link</button>
+      <span class="divider" aria-hidden="true"></span>
+      <span class="label">Bots</span>
+      <strong id="invite-difficulty"></strong>
     </div>
-    <div id="health-wrap" class="panel">
-      <label>
-        <span>Health</span>
-        <span id="health-text">100</span>
-      </label>
-      <div id="health-bar"><div id="health-fill"></div></div>
+
+    <div id="bottom-left">
+      <div id="weapon" class="hud-panel">
+        <div id="weapon-icon"></div>
+        <div class="weapon-text">
+          <span class="label">Weapon</span>
+          <span id="weapon-name">Empty</span>
+        </div>
+      </div>
+      <div id="health" class="hud-panel">
+        <div class="health-row">
+          <span class="label">Health</span>
+          <span id="health-text">100</span>
+        </div>
+        <div id="health-bar"><div id="health-fill"></div></div>
+      </div>
     </div>
-    <div id="hint" class="panel">WASD drive · Shift drift · Space / click fire</div>
+
+    <div id="respawn" class="hidden">
+      <div class="respawn-card">
+        <h2>Wrecked!</h2>
+        <p>Back on the track in a moment…</p>
+      </div>
+    </div>
+
+    <div id="hint">WASD drive · Shift drift · Space fire</div>
   </div>
+
+  <!--
+    Outside both overlays on purpose. These used to live inside #lobby, which
+    is display:none during a match — so the toast could never report anything
+    that happened in game, and fullscreen vanished exactly when you wanted it.
+  -->
+  <button type="button" id="btn-fullscreen" title="Fullscreen">⛶</button>
+  <div id="toast" role="status"></div>
 
   <script type="module" src="/js/main.js"></script>
 </body>

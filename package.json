@@ -5,10 +5,19 @@
   "type": "module",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node --watch server.js",
+    "check": "node scripts/simcheck.mjs && node scripts/wallcheck.mjs",
+    "playtest": "./scripts/with-server.sh node scripts/playtest.mjs",
+    "party": "./scripts/with-server.sh node scripts/partytest.mjs",
+    "smooth": "./scripts/with-server.sh node scripts/smoothcheck.mjs",
+    "test": "node scripts/simcheck.mjs && node scripts/wallcheck.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",
-    "socket.io": "^4.8.1"
+    "socket.io": "^4.8.1",
+    "three": "^0.160.1"
+  },
+  "devDependencies": {
+    "playwright": "^1.63.0"
   }
 }

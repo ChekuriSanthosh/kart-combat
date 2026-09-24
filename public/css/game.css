@@ -1,0 +1,582 @@
+/* Kart Combat — lobby and HUD styling.
+   Bright, chunky and high contrast so it reads at a glance while driving. */
+
+:root {
+  --ink: #16202e;
+  --panel: rgba(10, 16, 26, 0.72);
+  --panel-line: rgba(255, 255, 255, 0.14);
+  --text: #f4f7fb;
+  --muted: #a8b6cc;
+  --accent: #4fd1c5;
+  --play: #ff8a1f;
+  --play-deep: #d9600a;
+  --play-shadow: #a8430b;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0f17;
+  color: var(--text);
+  font-family: "Baloo 2", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+#game { display: block; width: 100vw; height: 100vh; outline: none; }
+.hidden { display: none !important; }
+
+/* ── Lobby ───────────────────────────────────────────────────────── */
+
+#lobby {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(1rem, 3vh, 2rem);
+  padding: 4vh 4vw;
+  color: var(--ink);
+  background:
+    radial-gradient(ellipse 120% 70% at 50% -10%, #8fd8ff 0%, transparent 60%),
+    linear-gradient(180deg, #4cb8f5 0%, #8fd8ff 34%, #b8e9a8 66%, #f4d98a 100%);
+}
+
+#lobby .hill {
+  position: absolute;
+  left: -10%; right: -10%; bottom: -14%;
+  height: 46%;
+  border-radius: 50% 50% 0 0 / 46% 46% 0 0;
+  background: linear-gradient(180deg, #7fd36b 0%, #48ab48 45%, #2d7d38 100%);
+  box-shadow: inset 0 22px 0 rgba(255, 255, 255, 0.16);
+}
+
+#lobby .clouds i {
+  position: absolute;
+  display: block;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.85);
+  filter: blur(1px);
+}
+#lobby .clouds i:nth-child(1) {
+  width: 190px; height: 66px; top: 12%; left: 6%;
+  box-shadow: 70px 16px 0 6px rgba(255,255,255,0.8), 140px -8px 0 -6px rgba(255,255,255,0.7);
+}
+#lobby .clouds i:nth-child(2) {
+  width: 150px; height: 54px; top: 20%; right: 8%;
+  box-shadow: -60px 14px 0 4px rgba(255,255,255,0.75);
+}
+#lobby .clouds i:nth-child(3) {
+  width: 120px; height: 44px; top: 46%; left: 78%;
+  box-shadow: -50px 10px 0 2px rgba(255,255,255,0.6);
+}
+
+.lobby-head { position: relative; text-align: center; }
+
+.logo {
+  font-size: clamp(2.4rem, 7vw, 4.4rem);
+  font-weight: 900;
+  letter-spacing: 0.03em;
+  line-height: 0.95;
+  color: #fff;
+  transform: rotate(-2deg);
+  text-shadow:
+    0 4px 0 #1f7fc4,
+    0 8px 0 #145a90,
+    0 16px 26px rgba(0, 0, 0, 0.3);
+}
+.logo span { display: block; color: #ffd84d; }
+
+.tagline {
+  margin-top: 0.9rem;
+  display: inline-block;
+  padding: 5px 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+  font-size: 0.9rem;
+}
+
+.lobby-body {
+  position: relative;
+  display: flex;
+  gap: 1.2rem;
+  align-items: stretch;
+  flex-wrap: wrap;
+  justify-content: center;
+  width: min(1040px, 100%);
+}
+
+.panel {
+  background: rgba(255, 255, 255, 0.92);
+  border: 4px solid #fff;
+  border-radius: 22px;
+  padding: 1.1rem 1.2rem;
+  box-shadow: 0 14px 34px rgba(0, 0, 0, 0.22);
+}
+
+.panel h2 {
+  font-size: 0.8rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #6b7a90;
+  margin-bottom: 0.7rem;
+}
+
+.racer-panel { width: 260px; display: flex; flex-direction: column; gap: 0.4rem; }
+.racer-panel label {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: #55637a;
+  margin-top: 0.4rem;
+}
+.racer-panel input,
+.racer-panel select {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 2px solid #cdd8e6;
+  border-radius: 12px;
+  background: #f4f7fb;
+  color: #17202e;
+  font: inherit;
+  font-weight: 700;
+}
+.racer-panel input:focus,
+.racer-panel select:focus { outline: none; border-color: #38bdf8; }
+
+.controls-hint {
+  margin-top: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  font-size: 0.75rem;
+  color: #55637a;
+  font-weight: 600;
+}
+kbd {
+  display: inline-block;
+  min-width: 1.5em;
+  padding: 1px 5px;
+  margin-right: 2px;
+  border: 1px solid #c3cede;
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: #fff;
+  font: inherit;
+  font-size: 0.72rem;
+  text-align: center;
+}
+
+.map-panel { flex: 1; min-width: 320px; display: flex; flex-direction: column; }
+.map-cards { display: flex; gap: 0.7rem; flex-wrap: wrap; }
+
+.map-card {
+  flex: 1 1 160px;
+  padding: 0;
+  border: 3px solid #e2e8f0;
+  border-radius: 16px;
+  background: #fff;
+  color: #17202e;
+  cursor: pointer;
+  overflow: hidden;
+  text-align: left;
+  font: inherit;
+  transition: transform 0.14s ease, border-color 0.14s ease, box-shadow 0.14s ease;
+}
+.map-card:hover { transform: translateY(-3px); box-shadow: 0 10px 22px rgba(0,0,0,0.18); }
+.map-card.selected {
+  border-color: #ff8a1f;
+  box-shadow: 0 0 0 4px rgba(255, 138, 31, 0.28);
+}
+.map-card .art { display: block; height: 74px; }
+.map-card strong { display: block; padding: 8px 10px 0; font-size: 0.95rem; }
+.map-card em { display: block; padding: 0 10px 10px; font-size: 0.72rem; color: #6b7a90; font-style: normal; }
+
+.art.gravel {
+  background:
+    radial-gradient(circle at 28% 74%, #9a8e80 0 13px, transparent 14px),
+    radial-gradient(circle at 68% 66%, #82776b 0 10px, transparent 11px),
+    linear-gradient(180deg, #9fd6f5 0 44%, #e0be7e 44% 100%);
+}
+.art.sky {
+  background:
+    radial-gradient(circle at 50% 74%, #ff2d95 0 10px, transparent 11px),
+    radial-gradient(circle at 24% 52%, #b14eff 0 12px, transparent 13px),
+    radial-gradient(circle at 76% 48%, #00e5ff 0 11px, transparent 12px),
+    linear-gradient(180deg, #0a0a1f 0%, #241a55 100%);
+}
+.art.bey {
+  background:
+    radial-gradient(circle at 50% 56%, #e8eef5 0 20%, #b9c4d2 20% 40%, #6d7787 40% 58%, #0e1420 58% 100%),
+    #0e1420;
+}
+
+#btn-play {
+  margin-top: 0.9rem;
+  width: 100%;
+  padding: 0.85rem 1.5rem;
+  font: inherit;
+  font-size: clamp(1.4rem, 3.4vw, 2rem);
+  font-weight: 900;
+  letter-spacing: 0.1em;
+  color: #fff;
+  border: 4px solid #fff;
+  border-radius: 18px;
+  cursor: pointer;
+  background: linear-gradient(180deg, #ffb347 0%, var(--play) 48%, var(--play-deep) 100%);
+  box-shadow: 0 7px 0 var(--play-shadow), 0 14px 26px rgba(217, 96, 10, 0.4);
+  text-shadow: 0 2px 0 rgba(0, 0, 0, 0.22);
+  transition: transform 0.1s ease, box-shadow 0.1s ease;
+}
+#btn-play:hover { transform: translateY(-2px); }
+#btn-play:active {
+  transform: translateY(5px);
+  box-shadow: 0 2px 0 var(--play-shadow), 0 6px 14px rgba(217, 96, 10, 0.35);
+}
+
+/* ── Party: create a private match or join one by code ───────────────── */
+/* Sits inside the light .panel, so these follow the panel's ink-on-white
+   palette rather than the dark HUD one. */
+.party { margin-top: 0.95rem; }
+
+.party-or {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  margin-bottom: 0.7rem;
+  color: #8b98ad;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+.party-or::before,
+.party-or::after {
+  content: '';
+  flex: 1;
+  height: 2px;
+  border-radius: 2px;
+  background: #e2e7ef;
+}
+
+.party-actions { display: grid; gap: 0.55rem; }
+.party-actions form { display: flex; gap: 0.55rem; }
+
+#btn-create-party,
+#btn-join-code {
+  padding: 0.62rem 1rem;
+  font: inherit;
+  font-weight: 800;
+  color: #3b4a61;
+  cursor: pointer;
+  border: 3px solid #dfe5ee;
+  border-radius: 13px;
+  background: #f4f7fb;
+  transition: background 0.12s ease, transform 0.1s ease, border-color 0.12s ease, color 0.12s ease;
+}
+#btn-create-party { width: 100%; }
+#btn-create-party:hover,
+#btn-join-code:hover {
+  background: #fff3e4;
+  border-color: var(--play);
+  color: var(--play-deep);
+}
+#btn-create-party:active,
+#btn-join-code:active { transform: translateY(2px); }
+
+#join-code {
+  flex: 1;
+  min-width: 0;
+  padding: 0.62rem 0.9rem;
+  font: inherit;
+  font-weight: 800;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--ink);
+  border: 3px solid #dfe5ee;
+  border-radius: 13px;
+  background: #fff;
+}
+#join-code::placeholder {
+  letter-spacing: 0.06em;
+  text-transform: none;
+  font-weight: 600;
+  color: #9aa6b8;
+}
+#join-code:focus { outline: none; border-color: var(--play); }
+
+/* ── Invite panel, shown in-match ────────────────────────────────────── */
+#invite {
+  position: absolute;
+  top: 16px;
+  left: 16px;
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+#invite .label {
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+#invite-code {
+  font-size: 1.05rem;
+  font-weight: 900;
+  letter-spacing: 0.2em;
+  color: var(--play);
+}
+#btn-invite {
+  padding: 0.3rem 0.7rem;
+  font: inherit;
+  font-size: 0.74rem;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.1);
+}
+#btn-invite:hover { background: rgba(255, 255, 255, 0.2); border-color: #fff; }
+
+#invite .divider {
+  width: 1px;
+  height: 18px;
+  background: rgba(255, 255, 255, 0.22);
+}
+#invite-difficulty {
+  font-size: 0.82rem;
+  font-weight: 800;
+  letter-spacing: 0.04em;
+}
+
+/* Both sit outside the lobby and the HUD, so they are positioned against the
+   viewport and stacked above everything — the toast has to be readable over
+   the lobby and mid-match alike. */
+#btn-fullscreen {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  border: 2px solid rgba(255,255,255,0.75);
+  background: rgba(15, 23, 42, 0.5);
+  color: #fff;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+#toast {
+  position: fixed;
+  left: 50%;
+  top: 6%;
+  transform: translateX(-50%);
+  z-index: 40;
+  max-width: min(90vw, 620px);
+  overflow-wrap: anywhere;
+  text-align: center;
+  padding: 10px 18px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+#toast.show { opacity: 1; }
+
+/* ── HUD ─────────────────────────────────────────────────────────── */
+
+#hud {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  /* The overlay itself must not eat clicks — they belong to the game, which
+     fires on pointerdown. Anything in here you are meant to actually click
+     has to opt back in; see below. */
+  pointer-events: none;
+  color: var(--text);
+}
+
+/* Interactive HUD bits opt back in.
+   Without this the invite panel renders perfectly and is completely dead:
+   every click on "Copy invite link" passes straight through to the canvas
+   underneath and fires a weapon instead. */
+#hud button,
+#invite {
+  pointer-events: auto;
+}
+
+.hud-panel {
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  border-radius: 14px;
+  backdrop-filter: blur(10px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.35);
+}
+
+#leaderboard {
+  position: absolute;
+  top: 14px;
+  right: 14px;
+  width: min(230px, 44vw);
+  padding: 10px 12px 12px;
+}
+#leaderboard h3 {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+#leaderboard ol { list-style: none; counter-reset: lb; display: flex; flex-direction: column; gap: 3px; }
+#leaderboard li {
+  counter-increment: lb;
+  display: grid;
+  grid-template-columns: 18px 10px 1fr auto;
+  gap: 7px;
+  align-items: center;
+  font-size: 0.8rem;
+  padding: 3px 6px;
+  border-radius: 7px;
+}
+#leaderboard li::before {
+  content: counter(lb);
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+#leaderboard li.me { background: rgba(79, 209, 197, 0.16); outline: 1px solid rgba(79, 209, 197, 0.4); }
+#leaderboard .swatch { width: 10px; height: 10px; border-radius: 3px; }
+#leaderboard .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+#leaderboard .score { font-variant-numeric: tabular-nums; color: #ffd84d; font-weight: 800; }
+
+#kill-feed {
+  position: absolute;
+  top: 14px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  align-items: center;
+}
+.feed-row {
+  padding: 5px 14px;
+  border-radius: 999px;
+  background: rgba(10, 16, 26, 0.78);
+  font-size: 0.8rem;
+  font-weight: 700;
+  transition: opacity 0.7s ease;
+}
+.feed-row.fade { opacity: 0; }
+
+#bottom-left {
+  position: absolute;
+  left: 16px;
+  bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: min(270px, 46vw);
+}
+
+#weapon { display: flex; align-items: center; gap: 10px; padding: 8px 12px; }
+#weapon-icon {
+  width: 46px;
+  height: 46px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 2px solid var(--panel-line);
+  transition: box-shadow 0.2s ease, transform 0.12s ease;
+}
+#weapon-icon.armed {
+  border-color: rgba(255, 216, 77, 0.65);
+  box-shadow: 0 0 18px rgba(255, 216, 77, 0.55);
+}
+/* Cycling through the arsenal after opening a crate. */
+#weapon-icon.spinning { animation: slot 0.18s linear infinite; }
+/* The moment it settles on what you actually won. */
+#weapon-icon.landed { animation: land 0.4s cubic-bezier(0.2, 1.6, 0.4, 1); }
+
+@keyframes slot {
+  0% { transform: translateY(-14%) scale(0.94); opacity: 0.55; }
+  60% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(14%) scale(0.94); opacity: 0.55; }
+}
+@keyframes land {
+  0% { transform: scale(1.5); box-shadow: 0 0 40px rgba(255, 240, 160, 0.95); }
+  100% { transform: scale(1); box-shadow: 0 0 18px rgba(255, 216, 77, 0.55); }
+}
+.weapon-text { display: flex; flex-direction: column; }
+.weapon-text .label,
+.health-row .label {
+  font-size: 0.64rem;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--muted);
+}
+#weapon-name { font-weight: 800; font-size: 0.95rem; }
+
+#health { padding: 9px 12px; }
+.health-row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px; }
+#health-text { font-weight: 800; font-variant-numeric: tabular-nums; }
+#health-bar {
+  height: 13px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.09);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+#health-fill {
+  height: 100%;
+  width: 100%;
+  background: linear-gradient(90deg, #22c55e, #84cc16);
+  transition: width 0.14s linear;
+}
+
+#respawn {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(6, 10, 18, 0.5);
+  backdrop-filter: blur(3px);
+}
+.respawn-card {
+  text-align: center;
+  padding: 22px 34px;
+  border-radius: 20px;
+  background: rgba(10, 16, 26, 0.85);
+  border: 2px solid rgba(255, 255, 255, 0.16);
+}
+.respawn-card h2 { font-size: 2rem; font-weight: 900; color: #ff6b6b; }
+.respawn-card p { color: var(--muted); margin-top: 4px; }
+
+#hint {
+  position: absolute;
+  right: 16px;
+  bottom: 16px;
+  padding: 7px 12px;
+  border-radius: 10px;
+  background: var(--panel);
+  border: 1px solid var(--panel-line);
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+@media (max-width: 760px) {
+  .racer-panel { width: 100%; }
+  #hint { display: none; }
+}
