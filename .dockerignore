@@ -1,0 +1,21 @@
+# Installed inside the image by `npm ci`. Copying the host's copy in would be
+# both slower and wrong — macOS binaries do not run in a Linux container.
+node_modules
+
+# Repository history: large, and nothing at runtime reads it.
+.git
+.gitignore
+
+# Test-only. The check suites and the screenshots playtest.mjs writes are not
+# part of the running game.
+scripts
+.playtest
+
+# Docs and editor noise.
+*.md
+.DS_Store
+
+# Never bake secrets into an image layer — they persist even if a later layer
+# deletes the file.
+.env
+.env.*
