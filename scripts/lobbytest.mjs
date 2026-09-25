@@ -68,6 +68,34 @@ try {
   if (names.length === 2) ok(`host sees the guest arrive (${names.length} players)`);
   else fail(`host list did not update: ${JSON.stringify(names)}`);
 
+  // ── A link-joiner skipped the lobby, so the waiting room is the only place
+  //    they can be anything but "Racer" ──
+  const joinedAs = (await guest.inputValue('#waiting-name')).trim();
+  if (joinedAs === 'Racer') ok('link-joiner starts as the default "Racer"');
+  else fail(`unexpected default name for a link-joiner: "${joinedAs}"`);
+
+  await guest.fill('#waiting-name', 'Speedy');
+  await guest.waitForTimeout(900); // past the rename debounce
+  names = await host.$$eval('#waiting-list li', (n) => n.map((e) => e.textContent));
+  if (names.join(' ').includes('Speedy')) ok('renaming reaches the host live');
+  else fail(`host did not see the rename: ${JSON.stringify(names)}`);
+
+  const guestList = await guest.$$eval('#waiting-list li', (n) => n.map((e) => e.textContent));
+  if (guestList.join(' ').includes('Speedy')) ok('renaming shows in the joiner\'s own list');
+  else fail(`joiner list still stale: ${JSON.stringify(guestList)}`);
+
+  // Server state must not stomp a field someone is still typing into.
+  await guest.focus('#waiting-name');
+  await guest.fill('#waiting-name', 'HalfTypedNam');
+  await host.click('#waiting-bots');           // force a lobby broadcast
+  await guest.waitForTimeout(600);
+  const stillTyping = await guest.inputValue('#waiting-name');
+  if (stillTyping === 'HalfTypedNam') ok('a focused name field is not overwritten by updates');
+  else fail(`typing was clobbered: field now "${stillTyping}"`);
+  await host.click('#waiting-bots');           // restore bots-on
+  await guest.fill('#waiting-name', 'Speedy');
+  await guest.waitForTimeout(700);
+
   // ── Host starts ──
   await host.click('#btn-start-match');
   await host.waitForSelector('#hud:not(.hidden)', { timeout: 10000 });
@@ -93,6 +121,54 @@ try {
   const url = await quick.evaluate(() => window.location.search);
   if (!url.includes('join=')) ok('quick play leaves the address bar clean');
   else fail(`quick play put a code in the URL: ${url}`);
+
+  // ── Match timer, results screen, and the loop back into a new match ──
+  const clock = (await host.textContent('#match-clock')).trim();
+  if (/^\d+:\d{2}$/.test(clock)) ok(`match clock is counting (${clock})`);
+  else fail(`match clock looks wrong: "${clock}"`);
+
+  const before = (await host.textContent('#match-clock')).trim();
+  await host.waitForTimeout(2200);
+  const after = (await host.textContent('#match-clock')).trim();
+  if (before !== after) ok(`clock ticks down (${before} -> ${after})`);
+  else fail(`clock is frozen at ${before}`);
+
+  // Waiting out a real match would take minutes, and the server-side clock and
+  // loop are covered headlessly. What only a browser can answer is whether the
+  // results screen renders the standings it is handed, so feed it one.
+  await host.evaluate(() => {
+    const standings = [
+      { i: 'zz1', n: 'Winner', c: 0xff5533, sc: 9, k: 9, rank: 1 },
+      { i: window.__kc.localId || 'me', n: 'HostRacer', c: 0x3498db, sc: 4, k: 4, rank: 2 },
+      { i: 'zz3', n: 'Third', c: 0x2ecc71, sc: 1, k: 1, rank: 3 },
+    ];
+    window.__kc.socket.listeners('match:over').forEach((fn) => fn({ standings, nextIn: 10 }));
+  });
+  await host.waitForTimeout(300);
+  if (await shown(host, '#results')) ok('results screen appears when the match ends');
+  else fail('results screen did not appear');
+
+  const winnerText = (await host.textContent('#results-winner')).trim();
+  if (/Winner wins!/.test(winnerText)) ok(`winner announced ("${winnerText}")`);
+  else fail(`winner line wrong: "${winnerText}"`);
+
+  const standingRows = await host.$$eval('#results-list li', (n) => n.map((e) => e.textContent));
+  if (standingRows.length === 3 && standingRows[0].includes('Winner') && standingRows[0].includes('9')) {
+    ok(`standings listed in order (${standingRows.length} rows)`);
+  } else fail(`standings wrong: ${JSON.stringify(standingRows)}`);
+
+  const firstHighlighted = await host.$eval('#results-list li:first-child',
+    (el) => el.classList.contains('first'));
+  if (firstHighlighted) ok('winner row is highlighted');
+  else fail('winner row is not highlighted');
+
+  // And the loop back out of it.
+  await host.evaluate(() => {
+    window.__kc.socket.listeners('match:start').forEach((fn) => fn({ seconds: 180 }));
+  });
+  await host.waitForTimeout(300);
+  if (!(await shown(host, '#results'))) ok('results screen clears when the next match starts');
+  else fail('results screen stayed up after the next match started');
 
   if (errors.length) fail(`console errors: ${errors.slice(0, 3).join(' | ')}`);
   else ok('no console errors across all clients');

@@ -152,6 +152,9 @@ function toast(msg, ms = 2200) {
   toast._t = setTimeout(() => toastEl.classList.remove('show'), ms);
 }
 
+// Prefill from last time so returning players are not retyping their name.
+if (nameInput && !nameInput.value) nameInput.value = recallName();
+
 for (const card of document.querySelectorAll('.map-card')) {
   card.addEventListener('click', () => {
     selectedMapId = card.dataset.map;
@@ -160,8 +163,10 @@ for (const card of document.querySelectorAll('.map-card')) {
 }
 
 function join(mode, code) {
+  const name = (nameInput?.value || '').trim() || recallName();
+  if (name) rememberName(name);
   socket.emit(EVENT.JOIN, {
-    name: (nameInput?.value || '').trim() || undefined,
+    name: name || undefined,
     mapId: selectedMapId,
     maxPlayers: Number(playerCountInput?.value || 8),
     difficulty: difficultyInput?.value || undefined,
@@ -288,7 +293,47 @@ const waitingCountEl = document.getElementById('waiting-count');
 const waitingHostEl = document.getElementById('waiting-host');
 const waitingGuestEl = document.getElementById('waiting-guest');
 const waitingBotsEl = document.getElementById('waiting-bots');
+const waitingNameEl = document.getElementById('waiting-name');
+const waitingLengthEl = document.getElementById('waiting-length');
 const startMatchBtn = document.getElementById('btn-start-match');
+
+/**
+ * Remember the nickname between visits.
+ *
+ * It matters most for the people who never see the lobby: someone who arrives
+ * on an invite link types their name once in the waiting room, and the next
+ * link a friend sends them already knows who they are.
+ */
+const NAME_KEY = 'kartcombat.name';
+function rememberName(name) {
+  try { localStorage.setItem(NAME_KEY, name); } catch { /* private mode */ }
+}
+function recallName() {
+  try { return localStorage.getItem(NAME_KEY) || ''; } catch { return ''; }
+}
+
+let renameTimer = 0;
+waitingNameEl?.addEventListener('input', () => {
+  const name = waitingNameEl.value.slice(0, 18).trim();
+  clearTimeout(renameTimer);
+  // Debounced so holding a key down does not emit once per character, but
+  // short enough that the list updates while you are still looking at it.
+  renameTimer = setTimeout(() => {
+    if (!name) return;
+    rememberName(name);
+    socket.emit(EVENT.RENAME, { name });
+  }, 350);
+});
+// Enter should commit immediately rather than wait out the debounce.
+waitingNameEl?.addEventListener('keydown', (e) => {
+  if (e.key !== 'Enter') return;
+  const name = waitingNameEl.value.slice(0, 18).trim();
+  if (!name) return;
+  clearTimeout(renameTimer);
+  rememberName(name);
+  socket.emit(EVENT.RENAME, { name });
+  waitingNameEl.blur();
+});
 
 document.getElementById('btn-waiting-invite')?.addEventListener('click', async () => {
   const link = inviteLink(waitingCodeEl.textContent);
@@ -302,6 +347,10 @@ waitingBotsEl?.addEventListener('change', () => {
   socket.emit(EVENT.CONFIG, { fillWithBots: waitingBotsEl.checked });
 });
 
+waitingLengthEl?.addEventListener('change', () => {
+  socket.emit(EVENT.CONFIG, { matchSeconds: Number(waitingLengthEl.value) });
+});
+
 document.getElementById('btn-waiting-leave')?.addEventListener('click', () => {
   // Drop the ?join= code too, or a refresh would walk straight back in.
   window.location.href = window.location.pathname;
@@ -312,9 +361,17 @@ function renderWaiting(state) {
   waitingCodeEl.textContent = state.code || '';
   waitingCountEl.textContent = `${state.players.length} / ${state.maxPlayers}`;
 
+  // Reflect the authoritative name back, but never while they are mid-word:
+  // overwriting a focused field would fight whoever is typing in it.
+  const me = state.players.find((p) => p.i === localId);
+  if (waitingNameEl && me && document.activeElement !== waitingNameEl) {
+    waitingNameEl.value = me.n;
+  }
+
   waitingListEl.innerHTML = '';
   for (const p of state.players) {
     const li = document.createElement('li');
+    if (p.i === localId) li.classList.add('me');
     const swatch = document.createElement('span');
     swatch.className = 'swatch';
     swatch.style.background = `#${(p.c ?? 0x888888).toString(16).padStart(6, '0')}`;
@@ -342,6 +399,9 @@ function renderWaiting(state) {
   waitingHostEl?.classList.toggle('hidden', !isHost);
   waitingGuestEl?.classList.toggle('hidden', isHost);
   if (isHost && waitingBotsEl) waitingBotsEl.checked = !!state.fillWithBots;
+  if (isHost && waitingLengthEl && document.activeElement !== waitingLengthEl) {
+    waitingLengthEl.value = String(state.matchSeconds);
+  }
 }
 
 socket.on(EVENT.LOBBY, (state) => {
@@ -429,6 +489,7 @@ socket.on(EVENT.SNAPSHOT, (snap) => {
 
   if (snap.e) for (const e of snap.e) handleEvent(e);
   updateHud(snap);
+  updateMatchClock(snap);
 });
 
 socket.on(EVENT.ERROR, (err) => toast(err?.message || 'Something went wrong'));
@@ -591,6 +652,84 @@ function renderWeaponSlot(dt) {
     : 'rgba(255,255,255,0.08)';
   weaponIconEl.classList.toggle('armed', !!def);
 }
+
+/* ── Match clock and results ────────────────────────────────────────── */
+const matchTimerEl = document.getElementById('match-timer');
+const matchClockEl = document.getElementById('match-clock');
+const resultsEl = document.getElementById('results');
+const resultsListEl = document.getElementById('results-list');
+const resultsWinnerEl = document.getElementById('results-winner');
+const resultsCountdownEl = document.getElementById('results-countdown');
+
+const mmss = (s) => {
+  const t = Math.max(0, Math.ceil(s));
+  return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, '0')}`;
+};
+
+/**
+ * The countdown runs off the snapshot's `tl`, so it is the server's clock
+ * every client is reading rather than each browser counting on its own and
+ * drifting apart.
+ */
+function updateMatchClock(snap) {
+  if (!matchTimerEl || snap.tl === undefined) return;
+  const results = snap.ph === ROOM_STATUS.RESULTS;
+  matchTimerEl.classList.toggle('hidden', results);
+  if (results) {
+    if (resultsCountdownEl) resultsCountdownEl.textContent = String(Math.max(0, Math.ceil(snap.tl)));
+    return;
+  }
+  matchClockEl.textContent = mmss(snap.tl);
+  matchTimerEl.classList.toggle('urgent', snap.tl <= 10);
+}
+
+function showResults(standings) {
+  if (!resultsEl) return;
+  const winner = standings[0];
+  resultsWinnerEl.textContent = winner
+    ? (winner.i === localId ? 'You win!' : `${winner.n} wins!`)
+    : 'Time!';
+
+  resultsListEl.innerHTML = '';
+  for (const p of standings.slice(0, 10)) {
+    const li = document.createElement('li');
+    if (p.rank === 1) li.classList.add('first');
+    if (p.i === localId) li.classList.add('me');
+
+    const rank = document.createElement('span');
+    rank.className = 'rank';
+    rank.textContent = String(p.rank);
+
+    const swatch = document.createElement('span');
+    swatch.className = 'swatch';
+    swatch.style.background = `#${(p.c ?? 0x888888).toString(16).padStart(6, '0')}`;
+
+    const name = document.createElement('span');
+    name.textContent = p.n;
+
+    const pts = document.createElement('span');
+    pts.className = 'pts';
+    pts.textContent = String(p.sc);
+
+    li.append(rank, swatch, name, pts);
+    resultsListEl.appendChild(li);
+  }
+  resultsEl.classList.remove('hidden');
+}
+
+socket.on(EVENT.MATCH_OVER, ({ standings }) => {
+  showResults(standings || []);
+  // Let go of the controls: the next match reseats everyone anyway, and
+  // holding forward through the results screen should not bank you a head
+  // start the moment it clears.
+  for (const k of Object.keys(input)) input[k] = false;
+});
+
+socket.on(EVENT.MATCH_START, () => {
+  resultsEl?.classList.add('hidden');
+  interp.clear();
+  canvas.focus();
+});
 
 function pushKillFeed(text) {
   const row = document.createElement('div');
@@ -836,6 +975,7 @@ requestAnimationFrame(frame);
 
 // Handle for the automated play test and for poking at a live match in devtools.
 window.__kc = {
+  get socket() { return socket; },
   get renderer() { return renderer; },
   get scene() { return scene; },
   get camera() { return camera; },

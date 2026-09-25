@@ -8,6 +8,7 @@ import {
   MAX_HP, RESPAWN_DELAY, SPAWN_INVULN, SIM_DT,
   DEFAULT_MAP_ID, clampMaxPlayers, unpackInput, KART_COLORS,
   CHEAT, CHEAT_DURATION, CHEAT_HOP_SPEED, CHEAT_COOLDOWN, ROOM_STATUS,
+  DEFAULT_MATCH_SECONDS, RESULTS_SECONDS,
 } from '../shared/constants.js';
 import { createKartState, createInput, stepKart, resolveKartPair, applyImpulse, KART } from '../shared/physics.js';
 import { getMap, getSpawn, applyEnvironment } from '../shared/maps/index.js';
@@ -53,6 +54,14 @@ export function createRoom(id, mapId, maxPlayers, { isPrivate = false, difficult
     status: isPrivate ? ROOM_STATUS.LOBBY : ROOM_STATUS.PLAYING,
     /** Host's choice in the waiting room: fill empty seats with bots? */
     fillWithBots: true,
+    /** How long each match runs, in seconds. */
+    matchSeconds: DEFAULT_MATCH_SECONDS,
+    /** Room clock at which the current match ends. */
+    endsAt: 0,
+    /** Room clock at which the results screen gives way to the next match. */
+    resultsUntil: 0,
+    /** Standings frozen at the final whistle, so they cannot drift on screen. */
+    standings: null,
     /** How sharp the bots are: 'low' | 'medium' | 'high'. */
     difficulty: isDifficulty(difficulty) ? difficulty : DEFAULT_DIFFICULTY,
     /** Crate flow field, rebuilt by the AI only when the live crate set moves. */
@@ -412,6 +421,7 @@ export function lobbyState(room) {
     difficulty: room.difficulty,
     maxPlayers: room.maxPlayers,
     fillWithBots: room.fillWithBots,
+    matchSeconds: room.matchSeconds,
     humans: humanCount(room),
     players: [...room.players.values()]
       .filter((p) => !p.isAi)
@@ -433,6 +443,8 @@ export function startMatch(room) {
   room.clock = 0;
   room.projectiles.length = 0;
   room.events.length = 0;
+  room.standings = null;
+  room.endsAt = room.matchSeconds;
   room.boxes = room.map.boxes.map((b) => ({ x: b.x, y: b.y, z: b.z, alive: true, respawnAt: 0 }));
 
   if (room.fillWithBots) fillBots(room);
@@ -448,12 +460,81 @@ export function startMatch(room) {
   return true;
 }
 
+/** Final standings, highest score first, ties broken by kills. */
+export function standingsOf(room) {
+  return [...room.players.values()]
+    .sort((a, b) => b.score - a.score || b.kills - a.kills)
+    .map((p, i) => ({
+      i: p.id, n: p.name, ai: p.isAi, c: p.color, sc: p.score, k: p.kills, rank: i + 1,
+    }));
+}
+
+/**
+ * Blow the final whistle.
+ *
+ * Standings are captured here rather than read live on the client, because the
+ * arena keeps running underneath the results screen — karts still collide,
+ * mines already in the ground still go off — and a leaderboard that reshuffled
+ * itself while players were reading it would make the winner ambiguous.
+ */
+function endMatch(room) {
+  room.status = ROOM_STATUS.RESULTS;
+  room.standings = standingsOf(room);
+  room.resultsUntil = room.clock + RESULTS_SECONDS;
+}
+
+/** Results are over: wipe the slate and run it again. */
+function restartMatch(room) {
+  room.status = ROOM_STATUS.PLAYING;
+  room.standings = null;
+  room.endsAt = room.clock + room.matchSeconds;
+  room.projectiles.length = 0;
+  room.boxes = room.map.boxes.map((b) => ({ x: b.x, y: b.y, z: b.z, alive: true, respawnAt: 0 }));
+  // Late arrivals joined during the last match or its results screen; seat
+  // everyone together so nobody starts the new one mid-arena.
+  if (room.fillWithBots) fillBots(room);
+  let i = 0;
+  for (const p of room.players.values()) {
+    p.score = 0;
+    p.kills = 0;
+    p.deaths = 0;
+    respawn(room, p, i++);
+  }
+  room.rosterDirty = true;
+}
+
+/**
+ * Advance the match clock. Returns 'ended' or 'restarted' on the tick the
+ * phase changes, so the caller can tell clients, and null otherwise.
+ */
+export function tickMatchClock(room) {
+  if (room.status === ROOM_STATUS.PLAYING && room.endsAt && room.clock >= room.endsAt) {
+    endMatch(room);
+    return 'ended';
+  }
+  if (room.status === ROOM_STATUS.RESULTS && room.clock >= room.resultsUntil) {
+    restartMatch(room);
+    return 'restarted';
+  }
+  return null;
+}
+
+/** Seconds left in whatever phase the room is in. */
+export function timeLeft(room) {
+  if (room.status === ROOM_STATUS.PLAYING) return Math.max(0, room.endsAt - room.clock);
+  if (room.status === ROOM_STATUS.RESULTS) return Math.max(0, room.resultsUntil - room.clock);
+  return 0;
+}
+
 export function snapshot(room) {
   const dead = [];
   room.boxes.forEach((b, i) => { if (!b.alive) dead.push(i); });
 
   return {
     t: Date.now(),
+    /** Phase and seconds left, so clients can run the countdown themselves. */
+    ph: room.status,
+    tl: Math.round(timeLeft(room) * 10) / 10,
     p: [...room.players.values()].map((p) => ({
       i: p.id,
       x: r2(p.state.x),

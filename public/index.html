@@ -101,6 +101,14 @@
         <button type="button" id="btn-waiting-invite">Copy invite link</button>
       </div>
 
+      <!-- Anyone who arrived on an invite link skipped the lobby, so this is
+           where they get to be someone other than "Racer". -->
+      <div class="waiting-you">
+        <label for="waiting-name">Your name</label>
+        <input id="waiting-name" type="text" maxlength="18" placeholder="Racer"
+               autocomplete="nickname" spellcheck="false" />
+      </div>
+
       <div class="waiting-players">
         <div class="waiting-players-head">
           <h3>Players</h3>
@@ -115,6 +123,13 @@
           <input type="checkbox" id="waiting-bots" checked />
           <span>Fill empty seats with bots</span>
         </label>
+        <label class="waiting-field" for="waiting-length">Match length</label>
+        <select id="waiting-length">
+          <option value="120">2 minutes</option>
+          <option value="180" selected>3 minutes</option>
+          <option value="300">5 minutes</option>
+          <option value="600">10 minutes</option>
+        </select>
         <button type="button" id="btn-start-match">START MATCH</button>
       </div>
       <p id="waiting-guest" class="waiting-guest hidden">
@@ -131,6 +146,8 @@
       <h3>Scores</h3>
       <ol id="leaderboard-list"></ol>
     </div>
+
+    <div id="match-timer"><span id="match-clock">0:00</span></div>
 
     <div id="kill-feed"></div>
 
@@ -168,6 +185,16 @@
     </div>
 
     <div id="hint">WASD drive · Shift drift · Space fire</div>
+
+    <!-- Final standings between matches. Frozen server-side at the whistle so
+         it cannot reshuffle while people are reading it. -->
+    <div id="results" class="hidden">
+      <div class="results-card">
+        <h2 id="results-winner">Time!</h2>
+        <ol id="results-list"></ol>
+        <p class="results-next">Next match in <strong id="results-countdown">10</strong>s</p>
+      </div>
+    </div>
   </div>
 
   <!--

@@ -10,6 +10,9 @@ export const EVENT = Object.freeze({
   LEAVE: 'player:leave',
   CHEAT: 'player:cheat',
 
+  /** Change your display name after joining — see the waiting room. */
+  RENAME: 'player:rename',
+
   // client → server, private-room lobby only
   START: 'room:start',
   CONFIG: 'room:config',
@@ -22,6 +25,10 @@ export const EVENT = Object.freeze({
   LOBBY: 'room:lobby',
   /** The host pressed start; the match is now live. */
   STARTED: 'room:started',
+  /** Time is up: final standings, and how long until the next match. */
+  MATCH_OVER: 'match:over',
+  /** The results screen is done; a fresh match has begun. */
+  MATCH_START: 'match:start',
   ERROR: 'error',
 });
 
@@ -36,7 +43,23 @@ export const EVENT = Object.freeze({
 export const ROOM_STATUS = Object.freeze({
   LOBBY: 'lobby',
   PLAYING: 'playing',
+  /** Match over: standings frozen on screen, next match counting down. */
+  RESULTS: 'results',
 });
+
+/** Match lengths the host can pick, in seconds. */
+export const MATCH_LENGTHS = Object.freeze([120, 180, 300, 600]);
+export const DEFAULT_MATCH_SECONDS = 180;
+/** How long the final leaderboard stays up before the next match begins. */
+export const RESULTS_SECONDS = 10;
+
+export function clampMatchSeconds(n) {
+  const v = Math.round(Number(n));
+  if (!Number.isFinite(v)) return DEFAULT_MATCH_SECONDS;
+  // Snap to the offered lengths rather than trusting an arbitrary number from
+  // a client — the list is what the UI can display sensibly.
+  return MATCH_LENGTHS.includes(v) ? v : DEFAULT_MATCH_SECONDS;
+}
 
 export const MAP_IDS = Object.freeze(['gravelPit', 'skyPinball', 'beybladeArena']);
 export const DEFAULT_MAP_ID = 'gravelPit';

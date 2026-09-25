@@ -18,12 +18,13 @@ import {
   MAP_IDS, DEFAULT_MAP_ID, JOIN_MODE,
   ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, normalizeRoomCode,
   DEFAULT_MAX_PLAYERS, clampMaxPlayers, CHEAT_CODES, ROOM_STATUS,
+  RESULTS_SECONDS, clampMatchSeconds,
 } from './shared/constants.js';
 import { getMap } from './shared/maps/index.js';
 import {
   createRoom, createPlayer, fillBots, removeOneBot, trimBots,
   humanCount, setMap, setDifficulty, stepRoom, snapshot, roster, applyCheat,
-  lobbyState, startMatch,
+  lobbyState, startMatch, tickMatchClock,
 } from './server/room.js';
 import { DEFAULT_DIFFICULTY, isDifficulty, getNavGrid } from './shared/ai/index.js';
 
@@ -221,6 +222,7 @@ io.on('connection', (socket) => {
     if (!room || room.status !== ROOM_STATUS.LOBBY) return;
 
     if (typeof payload.fillWithBots === 'boolean') room.fillWithBots = payload.fillWithBots;
+    if (payload.matchSeconds !== undefined) room.matchSeconds = clampMatchSeconds(payload.matchSeconds);
     if (payload.maxPlayers !== undefined) {
       const next = clampMaxPlayers(payload.maxPlayers);
       // Never shrink below the people already standing in the room.
@@ -229,6 +231,25 @@ io.on('connection', (socket) => {
     if (MAP_IDS.includes(payload.mapId) && payload.mapId !== room.mapId) setMap(room, payload.mapId);
     if (isDifficulty(payload.difficulty)) setDifficulty(room, payload.difficulty);
 
+    broadcastLobby(room);
+  });
+
+  socket.on(EVENT.RENAME, (payload = {}) => {
+    const ref = index.get(socket.id);
+    if (!ref) return;
+    const room = rooms.get(ref.roomId);
+    const player = room?.players.get(ref.playerId);
+    if (!player) return;
+
+    // Someone arriving on an invite link never sees the lobby, so this is the
+    // only chance they get to be anything other than "Racer". Sanitised the
+    // same way the join payload is.
+    const name = String(payload.name || '').slice(0, 18).trim();
+    if (!name || name === player.name) return;
+    player.name = name;
+
+    room.rosterDirty = true;
+    io.to(room.id).emit('roster', roster(room));
     broadcastLobby(room);
   });
 
@@ -299,9 +320,22 @@ setInterval(() => {
   while (accumulator >= SIM_DT && steps < 5) {
     for (const room of rooms.values()) {
       // A room still gathering has nothing to simulate: its karts are parked
-      // at spawn and will be reseated the moment the host starts anyway.
-      if (room.status !== ROOM_STATUS.PLAYING) continue;
+      // at spawn and will be reseated the moment the host starts anyway. A
+      // room on the results screen keeps running underneath it, so the arena
+      // behind the leaderboard is alive rather than frozen.
+      if (room.status === ROOM_STATUS.LOBBY) continue;
       stepRoom(room, SIM_DT);
+
+      const change = tickMatchClock(room);
+      if (change === 'ended') {
+        io.to(room.id).emit(EVENT.MATCH_OVER, {
+          standings: room.standings,
+          nextIn: RESULTS_SECONDS,
+        });
+      } else if (change === 'restarted') {
+        io.to(room.id).emit('roster', roster(room));
+        io.to(room.id).emit(EVENT.MATCH_START, { seconds: room.matchSeconds });
+      }
     }
     accumulator -= SIM_DT;
     steps++;
@@ -313,8 +347,10 @@ setInterval(() => {
     sinceSnapshot = 0;
     for (const room of rooms.values()) {
       // Nobody in a waiting room needs twenty kart snapshots a second. They
-      // get lobby updates when something actually changes instead.
-      if (room.status !== ROOM_STATUS.PLAYING) continue;
+      // get lobby updates when something actually changes instead. Results
+      // rooms still stream, so the countdown and the arena behind the
+      // leaderboard keep moving.
+      if (room.status === ROOM_STATUS.LOBBY) continue;
       if (room.rosterDirty) {
         io.to(room.id).emit('roster', roster(room));
         room.rosterDirty = false;
