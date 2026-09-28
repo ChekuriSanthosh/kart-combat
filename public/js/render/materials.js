@@ -77,6 +77,49 @@ export function treadTexture() {
   }, 2);
 }
 
+export function grassTexture(base = '#6f9e3f') {
+  return canvasTex(256, (ctx, s) => {
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, s, s);
+    // Mown stripes, the way a big field actually looks from above.
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    for (let i = 0; i < s; i += 32) ctx.fillRect(i, 0, 16, s);
+    // Scattered tufts so the stripes do not read as a flat gradient.
+    for (let i = 0; i < 1400; i++) {
+      const g = 90 + Math.floor(Math.random() * 70);
+      ctx.fillStyle = `rgba(${g - 30},${g},${40 + Math.random() * 30},0.45)`;
+      ctx.fillRect(Math.random() * s, Math.random() * s, 1 + Math.random() * 2, 2 + Math.random() * 3);
+    }
+  }, 22);
+}
+
+export function plankTexture(base = '#b8352c') {
+  return canvasTex(128, (ctx, s) => {
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, s, s);
+    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
+    ctx.lineWidth = 2;
+    for (let y = 0; y < s; y += 16) {
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(s, y); ctx.stroke();
+    }
+    ctx.fillStyle = 'rgba(255,255,255,0.05)';
+    for (let i = 0; i < 40; i++) ctx.fillRect(Math.random() * s, Math.random() * s, 20, 3);
+  }, 4);
+}
+
+export function hayTexture(base = '#d8b053') {
+  return canvasTex(128, (ctx, s) => {
+    ctx.fillStyle = base;
+    ctx.fillRect(0, 0, s, s);
+    for (let i = 0; i < 600; i++) {
+      ctx.strokeStyle = `rgba(${150 + Math.random() * 80},${110 + Math.random() * 60},40,0.5)`;
+      ctx.lineWidth = 1;
+      const x = Math.random() * s; const y = Math.random() * s;
+      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.random() * 14 - 7, y + 3); ctx.stroke();
+    }
+  }, 3);
+}
+
 /**
  * A palette-driven material cache. Solids reference materials by name so the
  * blueprint stays free of rendering concerns.
@@ -91,6 +134,28 @@ export function createMaterialLibrary(theme) {
   function base(name) {
     const color = palette[name] ?? 0xcccccc;
     switch (name) {
+      case 'grass':
+        return new THREE.MeshStandardMaterial({
+          color, map: track(grassTexture(`#${color.toString(16).padStart(6, '0')}`)),
+          roughness: 1, metalness: 0,
+        });
+      case 'barnWall':
+        return new THREE.MeshStandardMaterial({
+          color: 0xffffff, map: track(plankTexture(`#${color.toString(16).padStart(6, '0')}`)),
+          roughness: 0.85, metalness: 0,
+        });
+      case 'hay':
+        return new THREE.MeshStandardMaterial({
+          color: 0xffffff, map: track(hayTexture(`#${color.toString(16).padStart(6, '0')}`)),
+          roughness: 1, metalness: 0,
+        });
+      case 'silo':
+        return new THREE.MeshStandardMaterial({
+          color, roughness: 0.45, metalness: 0.4,
+        });
+      case 'fence':
+      case 'millBase':
+        return new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0.05 });
       case 'sand':
         return new THREE.MeshStandardMaterial({
           color, map: track(sandTexture()), roughness: 1, metalness: 0,

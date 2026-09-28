@@ -56,8 +56,14 @@ export function createRoom(id, mapId, maxPlayers, { isPrivate = false, difficult
     fillWithBots: true,
     /** How long each match runs, in seconds. */
     matchSeconds: DEFAULT_MATCH_SECONDS,
-    /** Room clock at which the current match ends. */
-    endsAt: 0,
+    /**
+     * Room clock at which the current match ends.
+     *
+     * A quick-play room is born already running, so it never passes through
+     * `startMatch` and has to start its own clock here. Leaving this at 0 gave
+     * public matches a timer frozen at 0:00 that never ended a round.
+     */
+    endsAt: isPrivate ? 0 : DEFAULT_MATCH_SECONDS,
     /** Room clock at which the results screen gives way to the next match. */
     resultsUntil: 0,
     /** Standings frozen at the final whistle, so they cannot drift on screen. */

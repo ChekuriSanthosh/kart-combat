@@ -18,12 +18,26 @@ export const KART = Object.freeze({
   radius: 0.85,
   height: 1.5,
 
-  maxSpeed: 26,
-  boostSpeed: 38,
-  reverseMax: 11,
-  accel: 30,
-  brake: 46,
-  reverseAccel: 18,
+  /**
+   * Speed is tuned against the arenas rather than in the abstract.
+   *
+   * At 26 m/s a kart crossed a 90 m arena in 3.5 seconds and needed a quarter
+   * of the whole map to turn around, so there was never time to line anything
+   * up — you were at the far wall before the camera had settled. 19 m/s takes
+   * about 4.7 s to cross and turns inside 13 m, which leaves room to actually
+   * fight rather than just commute.
+   */
+  maxSpeed: 19,
+  boostSpeed: 27,
+  reverseMax: 8,
+  /**
+   * Reaching top speed in 0.9 s read as teleporting. A second of build-up is
+   * long enough to feel the kart gather itself and short enough that nobody
+   * waits on it.
+   */
+  accel: 20,
+  brake: 32,
+  reverseAccel: 13,
 
   /** Exponential decay rates, per second. */
   coastDrag: 1.15,
@@ -32,16 +46,23 @@ export const KART = Object.freeze({
   driftGrip: 2.6,
 
   /**
-   * Turn rate in rad/s. 2.4 gives a ~11 m circle at full speed: tight enough
-   * to fight in, wide enough to hold a line. Higher values than this read as
-   * twitchy — the kart snaps round faster than you can correct.
+   * Turn rate in rad/s. At the current top speed 3.0 turns inside a 13 m
+   * circle — about an eighth of an arena, so a U-turn is a manoeuvre rather
+   * than an expedition. Much higher than this and the kart snaps round faster
+   * than a player can correct.
    */
-  turnRate: 2.4,
+  turnRate: 3.0,
   /**
-   * How quickly steering ramps in with speed. Turning authority reaches full
-   * strength at this speed, so a crawling kart cannot pirouette on the spot.
+   * Speed at which steering reaches full authority.
+   *
+   * This was 9 m/s, which meant a kart crawling at 2 m/s had thirteen percent
+   * of its steering — so the moment you were slowed by a wall, a hit or a bad
+   * landing, you could not turn away from whatever had stopped you. That reads
+   * as the controls dying exactly when you need them. At 5 m/s the same kart
+   * keeps a third of its steering, which is enough to recover with, while a
+   * parked kart still cannot pirouette on the spot.
    */
-  turnRampSpeed: 9,
+  turnRampSpeed: 5,
   driftTurnMul: 1.5,
   /**
    * Yaw rate eases toward its target rather than snapping to it. This is the

@@ -61,7 +61,7 @@ export function clampMatchSeconds(n) {
   return MATCH_LENGTHS.includes(v) ? v : DEFAULT_MATCH_SECONDS;
 }
 
-export const MAP_IDS = Object.freeze(['gravelPit', 'skyPinball', 'beybladeArena']);
+export const MAP_IDS = Object.freeze(['gravelPit', 'skyPinball', 'beybladeArena', 'harvestHollow']);
 export const DEFAULT_MAP_ID = 'gravelPit';
 
 /** How a player wants to be placed into a match. */

@@ -133,8 +133,12 @@ function buildDecor(d, materials, theme) {
 
   switch (d.kind) {
     case 'ground': {
+      // Round by default: a square ground plane shows its corners against the
+      // sky and makes the world look like a floating tile.
       const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(d.size, d.size),
+        d.round
+          ? new THREE.CircleGeometry(d.size / 2, 64)
+          : new THREE.PlaneGeometry(d.size, d.size),
         materials.get(d.mat || 'sand'),
       );
       mesh.rotation.x = -Math.PI / 2;
@@ -212,6 +216,248 @@ function buildDecor(d, materials, theme) {
       cloth.position.y = 4.4;
       cloth.rotation.y = d.rotY || 0;
       g.add(cloth);
+      break;
+    }
+    case 'cropField': {
+      // Visual only. Rows of crop give the field its farm read and cost the
+      // player nothing — you drive straight through them.
+      const soil = new THREE.Mesh(
+        new THREE.PlaneGeometry(d.w, d.d),
+        materials.make({ color: 0x8a6434, roughness: 1, metalness: 0 }),
+      );
+      soil.rotation.x = -Math.PI / 2;
+      soil.position.y = 0.02;
+      soil.receiveShadow = true;
+      g.add(soil);
+
+      // Every row is the same box in a different place, which is the exact
+      // shape of problem instancing solves: one draw call for the whole field
+      // instead of one per row.
+      const rowMat = materials.make({ color: 0x7fae3a, roughness: 0.95, metalness: 0 });
+      const rowGeo = new THREE.BoxGeometry(d.w * 0.96, 0.55, (d.d / d.rows) * 0.45);
+      const rows = new THREE.InstancedMesh(rowGeo, rowMat, d.rows);
+      rows.castShadow = true;
+      const m4 = new THREE.Matrix4();
+      for (let i = 0; i < d.rows; i++) {
+        m4.makeTranslation(0, 0.28, -d.d / 2 + (i + 0.5) * (d.d / d.rows));
+        rows.setMatrixAt(i, m4);
+      }
+      rows.instanceMatrix.needsUpdate = true;
+      g.add(rows);
+      g.rotation.y = d.rotY || 0;
+      break;
+    }
+    case 'pond': {
+      const water = new THREE.Mesh(
+        new THREE.CircleGeometry(d.r, 32),
+        materials.make({
+          color: 0x2f7fb5, roughness: 0.15, metalness: 0.5,
+          transparent: true, opacity: 0.85,
+        }),
+      );
+      water.rotation.x = -Math.PI / 2;
+      water.position.y = 0.05;
+      g.add(water);
+      const bank = new THREE.Mesh(
+        new THREE.RingGeometry(d.r, d.r + 1.4, 32),
+        materials.make({ color: 0x8a7a4a, roughness: 1, metalness: 0 }),
+      );
+      bank.rotation.x = -Math.PI / 2;
+      bank.position.y = 0.03;
+      g.add(bank);
+      break;
+    }
+    case 'barnShell': {
+      // The walls are real solids; this is the roof and gable that sit on top
+      // of them, which is why it has no collider of its own.
+      // Was near-black (0x4a4f58) which read as a hole in the map from above.
+      const roofMat = materials.make({ color: 0x8c6239, roughness: 0.85, metalness: 0.05 });
+      const plankMat = materials.get('barnWall');
+      for (const side of [-1, 1]) {
+        const pitch = new THREE.Mesh(new THREE.BoxGeometry(d.w * 0.72, 0.4, d.d + 1.4), roofMat);
+        pitch.position.set(side * d.w * 0.22, d.h + 1.2, 0);
+        pitch.rotation.z = side * -0.5;
+        pitch.castShadow = true;
+        pitch.receiveShadow = true;
+        g.add(pitch);
+      }
+      // Gable ends, raised so the doorway underneath stays open.
+      for (const end of [-1, 1]) {
+        const gable = new THREE.Mesh(new THREE.BoxGeometry(d.w, 2.2, 0.4), plankMat);
+        gable.position.set(0, d.h + 0.6, end * (d.d / 2));
+        gable.castShadow = true;
+        g.add(gable);
+      }
+      const ridge = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, d.d + 1.4), roofMat);
+      ridge.position.y = d.h + 2.6;
+      g.add(ridge);
+      break;
+    }
+    case 'siloCap': {
+      const dome = new THREE.Mesh(
+        new THREE.SphereGeometry(d.r, 16, 10, 0, Math.PI * 2, 0, Math.PI * 0.5),
+        materials.make({ color: 0x9aa3ad, roughness: 0.4, metalness: 0.55 }),
+      );
+      dome.castShadow = true;
+      g.add(dome);
+      break;
+    }
+    case 'windmill': {
+      // A tapered stone tower with a red cap: at 15 m tall it is the thing
+      // players navigate by, so it has to be legible from across the field.
+      const tower = new THREE.Mesh(
+        new THREE.CylinderGeometry(d.r * 1.5, d.r * 2.3, d.h, 14),
+        materials.make({ color: 0xe8dcc0, roughness: 0.85, metalness: 0.03 }),
+      );
+      tower.position.y = d.h / 2;
+      tower.castShadow = true;
+      tower.receiveShadow = true;
+      g.add(tower);
+
+      const band = new THREE.Mesh(
+        new THREE.CylinderGeometry(d.r * 1.58, d.r * 1.72, 0.9, 14),
+        materials.make({ color: 0xb8352c, roughness: 0.7, metalness: 0.08 }),
+      );
+      band.position.y = d.h * 0.52;
+      g.add(band);
+
+      const cap = new THREE.Mesh(
+        new THREE.ConeGeometry(d.r * 1.9, d.r * 2.2, 14),
+        materials.make({ color: 0xb8352c, roughness: 0.7, metalness: 0.1 }),
+      );
+      cap.position.y = d.h + d.r * 1.0;
+      cap.castShadow = true;
+      g.add(cap);
+
+      // The sails turn. Registered as a spinner so the frame loop drives it.
+      const sails = new THREE.Group();
+      sails.position.set(0, d.h * 0.92, d.r * 2.1);
+      const sailMat = materials.make({ color: 0xf4efe2, roughness: 0.75, metalness: 0 });
+      const armMat = materials.make({ color: 0x6b4a2a, roughness: 0.9, metalness: 0 });
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2;
+        const arm = new THREE.Mesh(new THREE.BoxGeometry(0.4, 11, 0.4), armMat);
+        arm.position.set(Math.sin(a) * 5.5, Math.cos(a) * 5.5, 0);
+        arm.rotation.z = -a;
+        const blade = new THREE.Mesh(new THREE.BoxGeometry(2.4, 8.5, 0.16), sailMat);
+        blade.position.set(Math.sin(a) * 6.2, Math.cos(a) * 6.2, 0.3);
+        blade.rotation.z = -a;
+        blade.castShadow = true;
+        sails.add(arm, blade);
+      }
+      // Marked rather than registered directly: the frame loop collects
+      // animated nodes by userData, the same way flags and sky shards work.
+      sails.userData.spinRate = 0.55;
+      g.add(sails);
+      break;
+    }
+    case 'fenceLine': {
+      // A 68-post fence was 204 separate meshes and the single biggest draw
+      // call cost on the map. Two instanced meshes draw the whole perimeter.
+      const postMat = materials.make({ color: 0xe8dcc0, roughness: 0.85, metalness: 0.03 });
+      const postGeo = new THREE.CylinderGeometry(0.16, 0.19, d.h, 6);
+      const railGeo = new THREE.BoxGeometry(0.12, 0.16, (Math.PI * 2 * d.r) / d.posts + 0.3);
+
+      const posts = new THREE.InstancedMesh(postGeo, postMat, d.posts);
+      const rails = new THREE.InstancedMesh(railGeo, postMat, d.posts * 2);
+      posts.castShadow = true;
+      rails.castShadow = true;
+
+      const mat = new THREE.Matrix4();
+      const quat = new THREE.Quaternion();
+      const pos = new THREE.Vector3();
+      const one = new THREE.Vector3(1, 1, 1);
+      let railIdx = 0;
+      for (let i = 0; i < d.posts; i++) {
+        const a = (i / d.posts) * Math.PI * 2;
+        mat.makeTranslation(Math.cos(a) * d.r, d.h / 2, Math.sin(a) * d.r);
+        posts.setMatrixAt(i, mat);
+
+        const mid = ((i + 0.5) / d.posts) * Math.PI * 2;
+        for (const railY of [d.h * 0.42, d.h * 0.78]) {
+          pos.set(Math.cos(mid) * d.r, railY, Math.sin(mid) * d.r);
+          quat.setFromAxisAngle(UP, -mid);
+          mat.compose(pos, quat, one);
+          rails.setMatrixAt(railIdx++, mat);
+        }
+      }
+      posts.instanceMatrix.needsUpdate = true;
+      rails.instanceMatrix.needsUpdate = true;
+      g.add(posts, rails);
+      break;
+    }
+    case 'treeline': {
+      // One node for the whole treeline rather than one per tree: 26 trees of
+      // four meshes each would be 104 draw calls for scenery nobody can touch.
+      const trunkMat = materials.make({ color: 0x6b4a2a, roughness: 1, metalness: 0 });
+      const leafMat = materials.make({ color: 0x3f7a2e, roughness: 1, metalness: 0 });
+      const n = d.count;
+      const trunks = new THREE.InstancedMesh(
+        new THREE.CylinderGeometry(0.34, 0.5, 1, 7), trunkMat, n,
+      );
+      const leaves = new THREE.InstancedMesh(
+        new THREE.IcosahedronGeometry(1, 0), leafMat, n * 3,
+      );
+      trunks.castShadow = true;
+      leaves.castShadow = true;
+
+      const mat = new THREE.Matrix4();
+      const quat = new THREE.Quaternion();
+      const pos = new THREE.Vector3();
+      const scl = new THREE.Vector3();
+      let leafIdx = 0;
+      for (let i = 0; i < n; i++) {
+        const a = d.phase + (i / n) * Math.PI * 2;
+        const tx = Math.cos(a) * d.r;
+        const tz = Math.sin(a) * d.r;
+        // Deterministic variation, so the treeline is not a row of clones and
+        // is still identical on every client.
+        const h = d.h + ((i * 7919) % 400) / 100;
+
+        pos.set(tx, h * 0.22, tz);
+        quat.setFromAxisAngle(UP, a);
+        scl.set(1, h * 0.45, 1);
+        mat.compose(pos, quat, scl);
+        trunks.setMatrixAt(i, mat);
+
+        for (let b = 0; b < 3; b++) {
+          const rad = h * (0.34 - b * 0.06);
+          pos.set(tx, h * (0.5 + b * 0.2), tz);
+          quat.setFromAxisAngle(UP, a + b);
+          scl.set(rad, rad, rad);
+          mat.compose(pos, quat, scl);
+          leaves.setMatrixAt(leafIdx++, mat);
+        }
+      }
+      trunks.instanceMatrix.needsUpdate = true;
+      leaves.instanceMatrix.needsUpdate = true;
+      g.add(trunks, leaves);
+      break;
+    }
+    case 'tractor': {
+      const body = new THREE.Mesh(
+        new THREE.BoxGeometry(1.8, 1.1, 3.0),
+        materials.make({ color: 0x2e7d32, roughness: 0.6, metalness: 0.25 }),
+      );
+      body.position.y = 1.1;
+      body.castShadow = true;
+      g.add(body);
+      const cab = new THREE.Mesh(
+        new THREE.BoxGeometry(1.5, 1.0, 1.2),
+        materials.make({ color: 0x1b5e20, roughness: 0.55, metalness: 0.3 }),
+      );
+      cab.position.set(0, 2.1, -0.6);
+      cab.castShadow = true;
+      g.add(cab);
+      const tyreMat = materials.make({ color: 0x23242a, roughness: 0.95, metalness: 0 });
+      for (const [wx, wz, wr] of [[-1.05, 1.0, 0.95], [1.05, 1.0, 0.95], [-1.0, -1.1, 0.6], [1.0, -1.1, 0.6]]) {
+        const w = new THREE.Mesh(new THREE.CylinderGeometry(wr, wr, 0.45, 12), tyreMat);
+        w.rotation.z = Math.PI / 2;
+        w.position.set(wx, wr, wz);
+        w.castShadow = true;
+        g.add(w);
+      }
+      g.rotation.y = d.rotY || 0;
       break;
     }
     case 'voidGrid': {
@@ -377,12 +623,14 @@ export function buildMap(map) {
 
   const flutterers = [];
   const drifters = [];
+  const spinners = [];
   for (const d of map.visuals || []) {
     const node = buildDecor(d, materials, map.theme);
     (d.spins ? spinner : group).add(node);
     node.traverse((o) => {
       if (o.userData.flutter !== undefined) flutterers.push(o);
       if (o.userData.drift !== undefined) drifters.push(o);
+      if (o.userData.spinRate !== undefined) spinners.push(o);
     });
   }
 
@@ -425,6 +673,7 @@ export function buildMap(map) {
       t += dt;
       if (map.spin) spinner.rotation.y += map.spin.omega * dt;
       for (const f of flutterers) f.rotation.y = Math.sin(t * 2 + f.userData.flutter) * 0.35;
+      for (const sp of spinners) sp.rotation.z += sp.userData.spinRate * dt;
       for (const d of drifters) {
         d.rotation.x += dt * 0.12;
         d.rotation.y += dt * 0.09;

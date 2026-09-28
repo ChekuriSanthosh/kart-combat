@@ -11,8 +11,9 @@ import { MAP_IDS, DEFAULT_MAP_ID } from '../constants.js';
 import gravelPit from './gravelPit.js';
 import skyPinball from './skyPinball.js';
 import beybladeArena from './beybladeArena.js';
+import harvestHollow from './harvestHollow.js';
 
-const BUILDERS = { gravelPit, skyPinball, beybladeArena };
+const BUILDERS = { gravelPit, skyPinball, beybladeArena, harvestHollow };
 
 const cache = new Map();
 

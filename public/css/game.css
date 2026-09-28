@@ -861,3 +861,18 @@ kbd {
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.06);
 }
+
+/* Farm arena card art, in the same gradient idiom as the others:
+   barn, silo and windmill post over a striped field under a bright sky. */
+.art.farm {
+  background:
+    radial-gradient(circle at 74% 58%, #f4efe2 0 5px, transparent 6px),
+    linear-gradient(90deg, transparent 70%, #e8dcc0 70% 72%, transparent 72%),
+    linear-gradient(180deg, transparent 56%, #b8352c 56% 78%, transparent 78%)
+      no-repeat 18% 0 / 24% 100%,
+    linear-gradient(180deg, transparent 48%, #d9d4c6 48% 78%, transparent 78%)
+      no-repeat 48% 0 / 9% 100%,
+    repeating-linear-gradient(90deg, #6f9e3f 0 7px, #7fae3a 7px 14px)
+      no-repeat 0 78% / 100% 22%,
+    linear-gradient(180deg, #9fd4f0 0 56%, #8bbf4a 56% 100%);
+}
