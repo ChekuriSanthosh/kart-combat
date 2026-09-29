@@ -12,6 +12,8 @@ export const EVENT = Object.freeze({
 
   /** Change your display name after joining — see the waiting room. */
   RENAME: 'player:rename',
+  /** Change character / kart after joining. */
+  CUSTOMIZE: 'player:customize',
 
   // client → server, private-room lobby only
   START: 'room:start',

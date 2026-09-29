@@ -27,6 +27,7 @@ import {
   lobbyState, startMatch, tickMatchClock,
 } from './server/room.js';
 import { DEFAULT_DIFFICULTY, isDifficulty, getNavGrid } from './shared/ai/index.js';
+import { validCharacter, validKart } from './shared/cosmetics.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const PORT = process.env.PORT || 3000;
@@ -119,6 +120,25 @@ function broadcastLobby(room) {
   io.to(room.id).emit(EVENT.LOBBY, lobbyState(room));
 }
 
+/**
+ * Wrap a socket handler so a throw inside it cannot take the process down.
+ *
+ * Socket.io invokes handlers from its own async context, so an exception in
+ * one becomes an uncaught exception and kills the whole server — every room,
+ * every match, for everyone. That is exactly what a missing import in the
+ * customise handler did: one player changing their kart ended every game in
+ * progress. A bad packet should cost the packet, not the server.
+ */
+function safe(label, fn) {
+  return (...args) => {
+    try {
+      fn(...args);
+    } catch (err) {
+      console.error(`${label} handler failed:`, err);
+    }
+  };
+}
+
 io.on('connection', (socket) => {
   socket.on(EVENT.JOIN, (payload = {}) => {
     try {
@@ -144,7 +164,10 @@ io.on('connection', (socket) => {
         return;
       }
 
-      const player = createPlayer(room, { name, isAi: false, socketId: socket.id });
+      const player = createPlayer(room, {
+        name, isAi: false, socketId: socket.id,
+        character: payload.character, kart: payload.kart,
+      });
       if (!room.hostId) room.hostId = player.id;
       if (room.status === ROOM_STATUS.PLAYING) fillBots(room);
 
@@ -179,7 +202,7 @@ io.on('connection', (socket) => {
     }
   });
 
-  socket.on(EVENT.INPUT, (cmd) => {
+  socket.on(EVENT.INPUT, safe('input', (cmd) => {
     const ref = index.get(socket.id);
     if (!ref || !cmd) return;
     const room = rooms.get(ref.roomId);
@@ -193,7 +216,7 @@ io.on('connection', (socket) => {
       player.queue.push({ seq: c.seq, bits: c.bits & 0x3f });
       if (player.queue.length > 60) player.queue.shift();
     }
-  });
+  }));
 
   /** Look up the caller's room, and the player record, only if they host it. */
   function asHost(socket) {
@@ -204,7 +227,7 @@ io.on('connection', (socket) => {
     return room;
   }
 
-  socket.on(EVENT.START, () => {
+  socket.on(EVENT.START, safe('start', () => {
     const room = asHost(socket);
     // Only the host, only a room that has not already started. Everyone else
     // asking is ignored rather than errored — a second click on a laggy
@@ -213,9 +236,9 @@ io.on('connection', (socket) => {
     startMatch(room);
     io.to(room.id).emit('roster', roster(room));
     io.to(room.id).emit(EVENT.STARTED, { mapId: room.mapId, difficulty: room.difficulty });
-  });
+  }));
 
-  socket.on(EVENT.CONFIG, (payload = {}) => {
+  socket.on(EVENT.CONFIG, safe('config', (payload = {}) => {
     const room = asHost(socket);
     // Settings are the host's to change, and only while people are still
     // gathering — swapping the arena mid-race would teleport everyone.
@@ -232,9 +255,9 @@ io.on('connection', (socket) => {
     if (isDifficulty(payload.difficulty)) setDifficulty(room, payload.difficulty);
 
     broadcastLobby(room);
-  });
+  }));
 
-  socket.on(EVENT.RENAME, (payload = {}) => {
+  socket.on(EVENT.RENAME, safe('rename', (payload = {}) => {
     const ref = index.get(socket.id);
     if (!ref) return;
     const room = rooms.get(ref.roomId);
@@ -251,9 +274,26 @@ io.on('connection', (socket) => {
     room.rosterDirty = true;
     io.to(room.id).emit('roster', roster(room));
     broadcastLobby(room);
-  });
+  }));
 
-  socket.on(EVENT.CHEAT, (payload) => {
+  socket.on(EVENT.CUSTOMIZE, safe('customize', (payload = {}) => {
+    const ref = index.get(socket.id);
+    if (!ref) return;
+    const room = rooms.get(ref.roomId);
+    const player = room?.players.get(ref.playerId);
+    if (!player) return;
+
+    // Purely cosmetic, so this is allowed at any time — including mid-match,
+    // where the change simply shows up on everyone's next roster update.
+    if (payload.character !== undefined) player.character = validCharacter(payload.character);
+    if (payload.kart !== undefined) player.kart = validKart(payload.kart);
+
+    room.rosterDirty = true;
+    io.to(room.id).emit('roster', roster(room));
+    broadcastLobby(room);
+  }));
+
+  socket.on(EVENT.CHEAT, safe('cheat', (payload) => {
     const ref = index.get(socket.id);
     if (!ref) return;
     const room = rooms.get(ref.roomId);
@@ -262,7 +302,7 @@ io.on('connection', (socket) => {
     const code = Number(payload?.code);
     if (!CHEAT_CODES.includes(code)) return;
     applyCheat(room, player, code);
-  });
+  }));
 
   socket.on(EVENT.LEAVE, () => leave(socket));
   socket.on('disconnect', () => leave(socket));

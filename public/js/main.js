@@ -14,6 +14,10 @@ import {
 } from '/shared/constants.js';
 import { WEAPONS } from '/shared/weapons.js';
 import { getDifficulty } from '/shared/ai/difficulty.js';
+import {
+  CHARACTERS, KARTS, DEFAULT_CHARACTER, DEFAULT_KART,
+  validCharacter, validKart,
+} from '/shared/cosmetics.js';
 import { KART } from '/shared/physics.js';
 import { pointInSolid } from '/shared/collision.js';
 import { buildMap } from './render/MapBuilder.js';
@@ -90,6 +94,27 @@ const outbox = [];
 
 const input = { forward: false, back: false, left: false, right: false, drift: false, fire: false };
 
+const LOOK_KEY = 'kartcombat.look';
+
+/**
+ * The chosen character and kart, remembered between visits the same way the
+ * nickname is. Held as one object because they are always read together and
+ * always written together.
+ */
+const look = (() => {
+  try {
+    const raw = JSON.parse(localStorage.getItem(LOOK_KEY) || '{}');
+    return { character: validCharacter(raw.character), kart: validKart(raw.kart) };
+  } catch {
+    return { character: DEFAULT_CHARACTER, kart: DEFAULT_KART };
+  }
+})();
+
+function rememberLook() {
+  try { localStorage.setItem(LOOK_KEY, JSON.stringify(look)); } catch { /* private mode */ }
+}
+
+
 /* ── Input ──────────────────────────────────────────────────────────── */
 const KEYMAP = {
   KeyW: 'forward', ArrowUp: 'forward',
@@ -155,6 +180,56 @@ function toast(msg, ms = 2200) {
 // Prefill from last time so returning players are not retyping their name.
 if (nameInput && !nameInput.value) nameInput.value = recallName();
 
+/* ── Garage ─────────────────────────────────────────────────────────── */
+const characterBlurbEl = document.getElementById('character-blurb');
+const kartBlurbEl = document.getElementById('kart-blurb');
+
+/**
+ * Build one picker. Both grids behave identically, so they share this rather
+ * than growing two copies that drift apart.
+ */
+function buildPicker(hostId, table, blurbEl, key, swatchOf) {
+  const host = document.getElementById(hostId);
+  if (!host) return () => {};
+  const buttons = new Map();
+
+  const paint = () => {
+    for (const [id, btn] of buttons) btn.classList.toggle('selected', id === look[key]);
+    const def = table[look[key]];
+    if (blurbEl && def) blurbEl.textContent = def.blurb;
+  };
+
+  for (const def of Object.values(table)) {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.title = def.blurb;
+
+    const swatch = document.createElement('span');
+    swatch.className = 'pick-swatch';
+    swatch.style.background = swatchOf(def);
+    btn.append(swatch, document.createTextNode(def.name));
+
+    btn.addEventListener('click', () => {
+      look[key] = def.id;
+      rememberLook();
+      paint();
+      // Already in a match or a waiting room? Apply it live.
+      if (joined) socket.emit(EVENT.CUSTOMIZE, { character: look.character, kart: look.kart });
+    });
+    buttons.set(def.id, btn);
+    host.appendChild(btn);
+  }
+  paint();
+  return paint;
+}
+
+const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+buildPicker('pick-character', CHARACTERS, characterBlurbEl, 'character',
+  (d) => `linear-gradient(135deg, ${hex(d.skin)} 0 55%, ${hex(d.accent)} 55% 100%)`);
+buildPicker('pick-kart', KARTS, kartBlurbEl, 'kart',
+  (d) => `linear-gradient(180deg, #5b6b82 0 ${Math.round(100 - d.wheel * 60)}%,`
+    + ` #23242a ${Math.round(100 - d.wheel * 60)}% 100%)`);
+
 for (const card of document.querySelectorAll('.map-card')) {
   card.addEventListener('click', () => {
     selectedMapId = card.dataset.map;
@@ -170,6 +245,8 @@ function join(mode, code) {
     mapId: selectedMapId,
     maxPlayers: Number(playerCountInput?.value || 8),
     difficulty: difficultyInput?.value || undefined,
+    character: look.character,
+    kart: look.kart,
     mode,
     code,
   });
@@ -463,7 +540,21 @@ socket.on(EVENT.WELCOME, (welcome) => {
 });
 
 socket.on('roster', (list) => {
+  const previous = rosterById;
   rosterById = new Map(list.map((p) => [p.i, p]));
+  // Cosmetics can change mid-match, and a kart's shape is baked into its mesh
+  // at build time — so anyone who swapped needs theirs rebuilt rather than
+  // just relabelled.
+  for (const p of list) {
+    const before = previous.get(p.i);
+    if (!before) continue;
+    if (before.ch === p.ch && before.kt === p.kt) continue;
+    const entry = karts.get(p.i);
+    if (!entry) continue;
+    scene.remove(entry.mesh.group);
+    entry.mesh.dispose();
+    karts.delete(p.i);
+  }
   for (const [id, entry] of karts) {
     if (!rosterById.has(id)) {
       scene.remove(entry.mesh.group);
@@ -554,7 +645,11 @@ function kartFor(id) {
   let entry = karts.get(id);
   if (entry) return entry;
   const info = rosterById.get(id);
-  const mesh = createKartMesh(info?.c ?? 0xcccccc, info?.n ?? id, { showTag: id !== localId });
+  const mesh = createKartMesh(info?.c ?? 0xcccccc, info?.n ?? id, {
+    showTag: id !== localId,
+    character: info?.ch,
+    kart: info?.kt,
+  });
   scene.add(mesh.group);
   entry = { mesh, prevSpeed: 0 };
   karts.set(id, entry);

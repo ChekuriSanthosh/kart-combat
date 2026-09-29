@@ -876,3 +876,55 @@ kbd {
       no-repeat 0 78% / 100% 22%,
     linear-gradient(180deg, #9fd4f0 0 56%, #8bbf4a 56% 100%);
 }
+
+/* ── Garage: driver and chassis pickers ──────────────────────────── */
+.garage-panel label {
+  display: block;
+  margin: 0.55rem 0 0.35rem;
+  font-size: 0.66rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: #6b7a90;
+}
+.pick-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+}
+.pick-grid button {
+  padding: 0.45rem 0.3rem;
+  font: inherit;
+  font-size: 0.72rem;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #2b3445;
+  cursor: pointer;
+  border: 2px solid #d5dce6;
+  border-radius: 10px;
+  background: #fff;
+  transition: border-color 0.12s, background 0.12s, transform 0.12s;
+}
+.pick-grid button:hover { border-color: #9fb1c8; transform: translateY(-1px); }
+.pick-grid button.selected {
+  border-color: #ff8a1f;
+  background: #fff4e6;
+  color: #7a3d00;
+}
+.pick-swatch {
+  display: block;
+  width: 100%;
+  height: 26px;
+  margin-bottom: 4px;
+  border-radius: 6px;
+}
+.pick-blurb {
+  min-height: 2.1em;
+  margin: 0.4rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.35;
+  color: #6b7a90;
+}
+/* Three panels side by side need a little more room than two did. */
+@media (min-width: 900px) {
+  .lobby-body { max-width: 1120px; }
+}

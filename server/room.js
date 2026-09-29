@@ -16,6 +16,9 @@ import { createAiBrain, driveAi, DEFAULT_DIFFICULTY, isDifficulty } from '../sha
 import {
   WEAPONS, rollWeapon, spawnProjectiles, stepProjectiles, applySelfWeapon,
 } from '../shared/weapons.js';
+import {
+  CHARACTER_IDS, KART_IDS, validCharacter, validKart,
+} from '../shared/cosmetics.js';
 
 const BOX_RESPAWN = 6.0;
 const BOT_NAMES = [
@@ -87,7 +90,15 @@ export function createRoom(id, mapId, maxPlayers, { isPrivate = false, difficult
   };
 }
 
-export function createPlayer(room, { name, isAi, socketId }) {
+/** Bots get a random look so a field of them is not eight identical karts. */
+function randomLook() {
+  return {
+    character: CHARACTER_IDS[Math.floor(Math.random() * CHARACTER_IDS.length)],
+    kart: KART_IDS[Math.floor(Math.random() * KART_IDS.length)],
+  };
+}
+
+export function createPlayer(room, { name, isAi, socketId, character, kart }) {
   const index = room.players.size;
   const spawn = getSpawn(room.mapId, index);
   const p = {
@@ -96,6 +107,10 @@ export function createPlayer(room, { name, isAi, socketId }) {
     isAi: !!isAi,
     socketId: socketId || null,
     color: KART_COLORS[room.nextColor++ % KART_COLORS.length],
+    // Cosmetic only — nothing here touches physics, so a kart that looks like
+    // a monster truck handles exactly like one that looks like a pod.
+    character: isAi ? randomLook().character : validCharacter(character),
+    kart: isAi ? randomLook().kart : validKart(kart),
 
     state: createKartState(spawn),
     input: createInput(),
@@ -408,7 +423,7 @@ export function setDifficulty(room, difficulty) {
 
 export function roster(room) {
   return [...room.players.values()].map((p) => ({
-    i: p.id, n: p.name, ai: p.isAi, c: p.color,
+    i: p.id, n: p.name, ai: p.isAi, c: p.color, ch: p.character, kt: p.kart,
   }));
 }
 
@@ -431,7 +446,10 @@ export function lobbyState(room) {
     humans: humanCount(room),
     players: [...room.players.values()]
       .filter((p) => !p.isAi)
-      .map((p) => ({ i: p.id, n: p.name, c: p.color, host: p.id === room.hostId })),
+      .map((p) => ({
+        i: p.id, n: p.name, c: p.color, ch: p.character, kt: p.kart,
+        host: p.id === room.hostId,
+      })),
   };
 }
 
