@@ -27,17 +27,23 @@ export const KART = Object.freeze({
    * about 4.7 s to cross and turns inside 13 m, which leaves room to actually
    * fight rather than just commute.
    */
-  maxSpeed: 19,
-  boostSpeed: 27,
-  reverseMax: 8,
   /**
-   * Reaching top speed in 0.9 s read as teleporting. A second of build-up is
-   * long enough to feel the kart gather itself and short enough that nobody
-   * waits on it.
+   * These are the *asymptotes* the taper in `stepKart` aims at, not speeds a
+   * kart reaches — drag holds it a little under, so 28 here settles at about
+   * 24 m/s (86 km/h) and 38 boosts to roughly 33.
    */
-  accel: 20,
-  brake: 32,
-  reverseAccel: 13,
+  maxSpeed: 28,
+  boostSpeed: 38,
+  reverseMax: 10,
+  /**
+   * How hard the kart pulls *from rest*. The taper bleeds this away as speed
+   * builds, so this number sets the punch off the line rather than the whole
+   * ramp: 18 gives a strong launch that takes about two seconds to run out of
+   * pull, instead of the old constant shove that hit the ceiling in under one.
+   */
+  accel: 18,
+  brake: 34,
+  reverseAccel: 14,
 
   /** Exponential decay rates, per second. */
   coastDrag: 1.15,
@@ -203,8 +209,22 @@ export function stepKart(k, inp, ctx, dt) {
 
   if (!stunned) {
     if (inp.forward) {
-      k.vx += fX * KART.accel * accelMul * dt;
-      k.vz += fZ * KART.accel * accelMul * dt;
+      // Acceleration tapers as top speed approaches, instead of running flat
+      // out into a hard clamp.
+      //
+      // With constant acceleration the kart gains speed at exactly the same
+      // rate all the way up and then stops dead at the limit, which is why it
+      // read as teleporting to top speed rather than building up to it — there
+      // was no part of the pull you could feel ending. Scaling by (1 - f²)
+      // gives full shove off the line and an ever-gentler push as the needle
+      // climbs, so speed arrives as a ramp with a top to it. The limit then
+      // emerges from the maths rather than being imposed on it, and the clamp
+      // further down is left as a safety net for knockback and ramps.
+      const cur = k.vx * fX + k.vz * fZ;
+      const frac = Math.max(0, Math.min(1, cur / topSpeed));
+      const taper = 1 - frac * frac;
+      k.vx += fX * KART.accel * accelMul * taper * dt;
+      k.vz += fZ * KART.accel * accelMul * taper * dt;
     } else if (inp.back) {
       const cur = k.vx * fX + k.vz * fZ;
       const a = cur > 1 ? KART.brake : KART.reverseAccel;

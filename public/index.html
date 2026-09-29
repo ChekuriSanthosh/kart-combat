@@ -54,14 +54,9 @@
 
       <section class="panel garage-panel">
         <h2>Your kart</h2>
-
-        <label>Driver</label>
-        <div id="pick-character" class="pick-grid"></div>
-        <p id="character-blurb" class="pick-blurb"></p>
-
-        <label>Chassis</label>
-        <div id="pick-kart" class="pick-grid"></div>
-        <p id="kart-blurb" class="pick-blurb"></p>
+        <div id="garage-preview-mini"></div>
+        <p id="garage-summary" class="garage-summary"></p>
+        <button type="button" id="btn-customize">CUSTOMIZE</button>
       </section>
 
       <section class="panel map-panel">
@@ -104,6 +99,35 @@
       </section>
     </div>
 
+  </div>
+
+  <!-- ── Customize ─────────────────────────────────────────────────── -->
+  <div id="customize" class="hidden">
+    <header class="cz-head">
+      <button type="button" id="cz-back" aria-label="Back">&#9664;&#9664;</button>
+      <h2>Customize</h2>
+    </header>
+
+    <div class="cz-body">
+      <div class="cz-panel">
+        <div class="cz-tabs" role="tablist">
+          <button type="button" class="cz-tab selected" data-tab="character">Driver</button>
+          <button type="button" class="cz-tab" data-tab="kart">Kart</button>
+        </div>
+        <div id="cz-options" class="cz-options"></div>
+        <p id="cz-blurb" class="cz-blurb"></p>
+        <button type="button" id="cz-random">Randomize Loadout</button>
+      </div>
+
+      <!-- Live 3D preview: the actual game mesh, not an illustration of it. -->
+      <div class="cz-stage">
+        <canvas id="cz-canvas"></canvas>
+        <div class="cz-caption">
+          <strong id="cz-name"></strong>
+          <span id="cz-sub"></span>
+        </div>
+      </div>
+    </div>
   </div>
 
   <!-- ── Waiting room (private matches only) ───────────────────────── -->

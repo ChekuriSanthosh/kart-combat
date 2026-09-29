@@ -120,7 +120,13 @@ for (const id of MAP_IDS) {
       // Resting on a ramp's slope is not being stuck inside it, so compare
       // against the surface under the kart rather than the solid's high point.
       const surface = topAt(s, k.x, k.z);
-      if (inside && k.y < (surface ?? top) - 0.2) {
+      // And being *under* something is not being inside it. Sky Pinball's
+      // bridges span 3.5 m above the deck, so a kart driving along underneath
+      // one sits inside its footprint and below its top while being in clear
+      // open air. Without this the check reported four phantom embeds the
+      // moment karts got quick enough to reach that far under a bridge.
+      const overlapsVertically = k.y < top && k.y + KART.height > s.y;
+      if (inside && overlapsVertically && k.y < (surface ?? top) - 0.2) {
         embedded++;
         if (embedded <= 4) {
           console.log(`        inside ${s.t}:${s.mat} at (${s.x.toFixed(1)}, ${s.z.toFixed(1)})`

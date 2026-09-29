@@ -21,14 +21,58 @@ page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
 try {
   await page.goto(BASE, { waitUntil: 'networkidle' });
 
-  const counts = await page.evaluate(() => ({
-    chars: document.querySelectorAll('#pick-character button').length,
-    karts: document.querySelectorAll('#pick-kart button').length,
-  }));
-  if (counts.chars === 6) ok(`lobby offers ${counts.chars} drivers`);
-  else fail(`expected 6 drivers, found ${counts.chars}`);
-  if (counts.karts === 6) ok(`lobby offers ${counts.karts} chassis`);
-  else fail(`expected 6 chassis, found ${counts.karts}`);
+  // ── The customize screen ──
+  const hidden = await page.evaluate(() =>
+    document.getElementById('customize').classList.contains('hidden'));
+  if (hidden) ok('customize starts closed');
+  else fail('customize screen is open on load');
+
+  await page.click('#btn-customize');
+  await page.waitForTimeout(400);
+  const drivers = await page.$$eval('#cz-options button', (n) => n.length);
+  if (drivers === 6) ok(`customize offers ${drivers} drivers`);
+  else fail(`expected 6 drivers, found ${drivers}`);
+
+  await page.click('.cz-tab[data-tab="kart"]');
+  await page.waitForTimeout(300);
+  const karts = await page.$$eval('#cz-options button', (n) => n.length);
+  if (karts === 6) ok(`customize offers ${karts} chassis`);
+  else fail(`expected 6 chassis, found ${karts}`);
+
+  // The preview must actually be drawing, not a blank canvas.
+  const drew = await page.evaluate(() => {
+    const c = document.getElementById('cz-canvas');
+    const gl = c.getContext('webgl2') || c.getContext('webgl');
+    return { w: c.width, h: c.height, hasGL: !!gl };
+  });
+  if (drew.hasGL && drew.w > 50 && drew.h > 50) ok(`preview canvas is live (${drew.w}x${drew.h})`);
+  else fail(`preview canvas not rendering: ${JSON.stringify(drew)}`);
+
+  // Picking something must change what the preview shows.
+  const changed = await page.evaluate(async () => {
+    const before = document.getElementById('cz-name').textContent;
+    document.querySelectorAll('.cz-tab')[0].click();
+    await new Promise((r) => setTimeout(r, 150));
+    const buttons = document.querySelectorAll('#cz-options button');
+    buttons[buttons.length - 1].click();
+    await new Promise((r) => setTimeout(r, 250));
+    return { before, after: document.getElementById('cz-name').textContent };
+  });
+  if (changed.before !== changed.after) ok(`selecting updates the preview ("${changed.before}" -> "${changed.after}")`);
+  else fail(`preview did not update, still "${changed.after}"`);
+
+  await page.click('#cz-random');
+  await page.waitForTimeout(300);
+  const randomised = await page.evaluate(() => document.getElementById('cz-name').textContent);
+  if (randomised) ok(`randomize picks a loadout (${randomised})`);
+  else fail('randomize produced nothing');
+
+  await page.click('#cz-back');
+  await page.waitForTimeout(250);
+  const closed = await page.evaluate(() =>
+    document.getElementById('customize').classList.contains('hidden'));
+  if (closed) ok('back closes the customize screen');
+  else fail('back did not close the customize screen');
 
   // Build one mesh of every combination and count what came out.
   const built = await page.evaluate(async () => {

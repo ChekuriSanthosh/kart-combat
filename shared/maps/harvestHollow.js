@@ -1,11 +1,10 @@
 /**
  * Harvest Hollow — a working farm at golden hour.
  *
- * The brief for this arena was "fewer hurdles". Gravel Pit blocks the floor
- * with 39 solids and the fighting happens in the gaps between them; here the
- * field is deliberately wide open and almost all of the character comes from
- * things you cannot crash into — crop rows, a pond, a turning windmill, fence
- * lines running off toward the treeline.
+ * The brief was "fewer hurdles, and room for fifteen". The field is 124 m
+ * across with only sixteen collision solids on it, against Gravel Pit's 39 in
+ * a space two thirds the size — so there is somewhere to go at all times, and
+ * almost all of the arena's character comes from things you cannot crash into.
  *
  * What little geometry there is earns its place:
  *
@@ -17,22 +16,26 @@
  *   tangent instead of stopping you dead the way a corner does, so a cluster
  *   of them reads as an obstacle while barely costing anyone momentum.
  *
- *   The two earth ramps point inward, so air time is always spent heading
- *   back into the fight.
+ *   The corn is the idea this arena is built around. It is two metres tall and
+ *   has no collider at all, so it blocks what you can *see* without blocking
+ *   where you can *go*. You lose people in it, you get lost in it, and you
+ *   come out of it somewhere nobody expected — all without a single thing to
+ *   crash into. Cover that costs no momentum is rare, and on a map this open
+ *   it is what stops the whole fight happening in one line of sight.
  */
 
 import { box, cyl, ramp, ring, decor, spawnRing, circlePoints } from './helpers.js';
 
-const ARENA_R = 46;
+const ARENA_R = 62;
 const FENCE_H = 3.0;
 
 /** Barn: two long walls with both ends open, so you drive straight through. */
-const BARN_X = -20;
-const BARN_Z = 2;
-const BARN_LEN = 24;
-const BARN_HALF_W = 6.5;
-const BARN_WALL_T = 1.2;
-const BARN_H = 5.0;
+const BARN_X = -26;
+const BARN_Z = 4;
+const BARN_LEN = 30;
+const BARN_HALF_W = 8;
+const BARN_WALL_T = 1.3;
+const BARN_H = 5.5;
 
 export default function harvestHollow() {
   const solids = [];
@@ -54,61 +57,74 @@ export default function harvestHollow() {
   }
 
   // ── Silo cluster ──
-  const siloSpots = [[27, -17], [33, -8], [26, 0]];
+  const siloSpots = [[36, -24], [45, -12], [35, -2]];
   for (const [sx, sz] of siloSpots) {
-    solids.push(cyl(sx, 0, sz, 3.2, 13, 'silo'));
+    solids.push(cyl(sx, 0, sz, 3.4, 14, 'silo'));
   }
 
-  // ── Two earth ramps, both throwing you back toward the middle ──
-  for (const [rx, rz] of [[6, 30], [-4, -31]]) {
+  // ── Water tower: a second landmark on the far side from the windmill ──
+  solids.push(cyl(30, 0, 34, 2.6, 11, 'millBase'));
+
+  // ── Three earth ramps, all throwing you back toward the middle ──
+  for (const [rx, rz] of [[8, 42], [-10, -44], [46, 14]]) {
     const rotY = Math.atan2(-rx, -rz); // high edge faces the centre
-    solids.push(ramp(rx, 0, rz, 9, 11, 2.4, rotY + Math.PI, 'dirt'));
+    solids.push(ramp(rx, 0, rz, 10, 12, 2.6, rotY + Math.PI, 'dirt'));
   }
 
   // ── Round bales: sparse, and round for the same reason the silos are ──
-  const balePositions = [[14, -6], [10, 14], [-6, 22], [-30, -18], [30, 16]];
+  const balePositions = [
+    [18, -10], [14, 20], [-10, 30], [-40, -26], [40, 22], [-2, -18], [-34, 34],
+  ];
   for (const [bx, bz] of balePositions) {
-    solids.push(cyl(bx, 0, bz, 1.9, 1.7, 'hay'));
+    solids.push(cyl(bx, 0, bz, 2.0, 1.8, 'hay'));
   }
 
   // ── Windmill: a landmark you navigate by, with a base you can hit ──
-  solids.push(cyl(0, 0, -36, 2.2, 15, 'millBase'));
+  solids.push(cyl(0, 0, -48, 2.4, 16, 'millBase'));
 
   // ── Visual dressing: none of this collides ──
-  // Far wider than the arena and round, so the edge of the world dies in fog
-  // rather than ending in a visible corner.
-  visuals.push(decor('ground', 0, 0, 0, { size: 620, mat: 'grass', round: true }));
-  // Crops sit *outside* the fence. Inside, their rows clipped through both the
-  // fence and the karts driving over them; outside, they layer properly —
-  // fence, then worked fields, then the treeline — and read as the farm this
-  // arena is parked in rather than decoration scattered on the track.
-  visuals.push(decor('cropField', 44, 0, 40, { w: 26, d: 20, rotY: -0.7, rows: 24 }));
-  visuals.push(decor('cropField', -50, 0, 34, { w: 22, d: 17, rotY: 0.6, rows: 20 }));
-  visuals.push(decor('cropField', -8, 0, 62, { w: 30, d: 18, rotY: 0.1, rows: 26 }));
-  visuals.push(decor('pond', -27, 0, -29, { r: 8 }));
+  visuals.push(decor('ground', 0, 0, 0, { size: 760, mat: 'grass', round: true }));
+
+  /**
+   * Corn, inside the fence and drivable straight through. Placed off the
+   * centre line and away from the barn mouths so there is always a clear route
+   * for anyone who would rather not lose sight of the fight.
+   */
+  visuals.push(decor('cornPatch', 24, 0, 22, { w: 30, d: 26, rows: 15, per: 13, rotY: -0.25 }));
+  visuals.push(decor('cornPatch', -30, 0, -32, { w: 28, d: 24, rows: 14, per: 12, rotY: 0.4 }));
+  visuals.push(decor('cornPatch', 6, 0, -26, { w: 20, d: 16, rows: 10, per: 9, rotY: 0.15 }));
+
+  visuals.push(decor('pond', -44, 0, 26, { r: 10 }));
   visuals.push(decor('barnShell', BARN_X, 0, BARN_Z, {
     w: BARN_HALF_W * 2 + BARN_WALL_T, d: BARN_LEN, h: BARN_H,
   }));
   for (const [sx, sz] of siloSpots) {
-    visuals.push(decor('siloCap', sx, 13, sz, { r: 3.2 }));
+    visuals.push(decor('siloCap', sx, 14, sz, { r: 3.4 }));
   }
-  visuals.push(decor('windmill', 0, 0, -36, { h: 15, r: 2.2 }));
-  visuals.push(decor('fenceLine', 0, 0, 0, { r: ARENA_R, posts: 68, h: FENCE_H }));
+  visuals.push(decor('waterTower', 30, 11, 34, { r: 4.2 }));
+  visuals.push(decor('windmill', 0, 0, -48, { h: 16, r: 2.4 }));
+  visuals.push(decor('fenceLine', 0, 0, 0, { r: ARENA_R, posts: 86, h: FENCE_H }));
 
-  // A treeline just outside the fence gives the field somewhere to *be*,
-  // without putting anything in the way. One node, instanced by the renderer.
+  // Worked fields beyond the fence, then the treeline: the layers that give
+  // the arena somewhere to be without putting anything in the way.
+  visuals.push(decor('cropField', 60, 0, 54, { w: 34, d: 26, rotY: -0.7, rows: 28 }));
+  visuals.push(decor('cropField', -68, 0, 44, { w: 28, d: 22, rotY: 0.6, rows: 24 }));
+  visuals.push(decor('cropField', -10, 0, 82, { w: 38, d: 22, rotY: 0.1, rows: 30 }));
   visuals.push(decor('treeline', 0, 0, 0, {
-    count: 34, r: ARENA_R + 38, h: 8, phase: 0.11,
+    count: 44, r: ARENA_R + 44, h: 8, phase: 0.11,
   }));
-  for (const [tx, tz] of [[30, -48], [-52, 6], [52, 22]]) {
+  for (const [tx, tz] of [[42, -64], [-70, 10], [68, 30], [-24, -74]]) {
     visuals.push(decor('tractor', tx, 0, tz, { rotY: tx * 0.1 }));
   }
 
-  // ── Pickups: a wide ring plus a pair inside the barn tunnel ──
-  for (const p of circlePoints(8, 30, 0, 0.06)) boxes.push({ x: p.x, y: 0, z: p.z });
-  for (const p of circlePoints(2, 13, 0, 0.25)) boxes.push({ x: p.x, y: 0, z: p.z });
-  boxes.push({ x: BARN_X, y: 0, z: BARN_Z - 7 });
-  boxes.push({ x: BARN_X, y: 0, z: BARN_Z + 7 });
+  // ── Pickups: a wide ring, an inner ring, the barn, and inside the corn ──
+  for (const p of circlePoints(9, 42, 0, 0.05)) boxes.push({ x: p.x, y: 0, z: p.z });
+  for (const p of circlePoints(4, 20, 0, 0.22)) boxes.push({ x: p.x, y: 0, z: p.z });
+  boxes.push({ x: BARN_X, y: 0, z: BARN_Z - 9 });
+  boxes.push({ x: BARN_X, y: 0, z: BARN_Z + 9 });
+  // Two crates buried in corn: worth the risk of not seeing who else went in.
+  boxes.push({ x: 24, y: 0, z: 22 });
+  boxes.push({ x: -30, y: 0, z: -32 });
 
   return {
     id: 'harvestHollow',
@@ -118,11 +134,11 @@ export default function harvestHollow() {
     arenaRadius: ARENA_R,
     theme: {
       background: 0x9fd4f0,
-      fog: { color: 0xcfe6f2, near: 95, far: 260 },
+      fog: { color: 0xcfe6f2, near: 130, far: 330 },
       hemi: { sky: 0xbfe4ff, ground: 0x6f7a3a, intensity: 0.62 },
       ambient: { color: 0xfff3dc, intensity: 0.34 },
       // Low and warm: long shadows across the field read as late afternoon.
-      sun: { color: 0xffe9c0, intensity: 2.5, x: -52, y: 44, z: 30 },
+      sun: { color: 0xffe9c0, intensity: 2.5, x: -64, y: 52, z: 38 },
       palette: {
         grass: 0x6f9e3f,
         dirt: 0xa9793f,
@@ -137,9 +153,9 @@ export default function harvestHollow() {
     },
     solids,
     visuals,
-    // Outside the ramps (which reach r≈36) and inside the fence, so nobody
+    // Outside the ramps (which reach r≈50) and inside the fence, so nobody
     // starts the match perched halfway up a slope.
-    spawns: spawnRing(15, 40, 0, 0.02),
+    spawns: spawnRing(15, 55, 0, 0.02),
     boxes,
   };
 }

@@ -30,128 +30,194 @@ function shade(hex, amount) {
  * the caller so every variant gets them in the same place.
  */
 const CHASSIS = {
+  /**
+   * Shared go-kart language, so every variant reads as the same class of
+   * machine: a low floor pan you sit *in* rather than on, side rails running
+   * its length, wheels standing proud at the corners, and a seat back behind
+   * the driver. Boxes alone never looked like karts — a kart is mostly a flat
+   * plate with a swept nose and its wheels out in the open.
+   */
   classic(add, M) {
-    const tub = add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.52, 2.0), M.body));
-    tub.position.set(0, 0.52, 0);
-    const nose = add(new THREE.Mesh(new THREE.BoxGeometry(1.15, 0.36, 0.8), M.body));
-    nose.position.set(0, 0.46, 1.25);
-    const snout = add(new THREE.Mesh(new THREE.BoxGeometry(0.85, 0.26, 0.4), M.dark));
-    snout.position.set(0, 0.4, 1.7);
+    pan(add, M, { w: 1.34, len: 3.0, y: 0.30 });
+    noseCone(add, M, { z: 1.62, w: 1.1, y: 0.34 });
+    rails(add, M, { w: 1.44, len: 2.5, y: 0.46 });
+    seat(add, M, { z: -0.62, y: 0.38 });
+    engine(add, M, { z: -1.22, y: 0.62, w: 0.86 });
+    pipes(add, M, { z: -1.5, y: 0.82, spread: 0.3, len: 0.8, tilt: 0.5 });
     for (const sx of [-1, 1]) {
-      const pod = add(new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.42, 1.7), M.dark));
-      pod.position.set(sx * 0.82, 0.5, 0);
+      const pod = add(new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.3, 1.5), M.dark));
+      pod.position.set(sx * 0.72, 0.44, 0.05);
     }
-    const engine = add(new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.55, 0.62), M.trim));
-    engine.position.set(0, 0.78, -1.05);
-    for (const sx of [-1, 1]) {
-      const pipe = add(new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.1, 0.7, 8), M.chrome));
-      pipe.position.set(sx * 0.3, 1.1, -1.25);
-      pipe.rotation.x = 0.45;
-    }
-    const bumper = add(new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.2, 0.22), M.trim));
-    bumper.position.set(0, 0.3, 1.92);
   },
 
   monster(add, M) {
-    // Tall and short-bodied so the enormous wheels dominate the silhouette.
-    const tub = add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.7, 1.8), M.body));
-    tub.position.set(0, 1.05, 0);
-    const skid = add(new THREE.Mesh(new THREE.BoxGeometry(1.7, 0.18, 2.3), M.trim));
-    skid.position.set(0, 0.62, 0);
-    // Roll cage: the read-at-distance feature.
+    // Same kart, jacked up: the pan rides high and a cage sits over the seat.
+    pan(add, M, { w: 1.4, len: 2.6, y: 0.9 });
+    noseCone(add, M, { z: 1.44, w: 1.2, y: 0.96 });
+    seat(add, M, { z: -0.5, y: 0.98 });
+    engine(add, M, { z: -1.0, y: 1.26, w: 1.0 });
     for (const sx of [-1, 1]) {
-      const bar = add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.3, 8), M.chrome));
-      bar.position.set(sx * 0.62, 1.9, -0.45);
-      bar.rotation.z = sx * 0.16;
+      const bar = add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, 1.5, 8), M.chrome));
+      bar.position.set(sx * 0.6, 1.72, -0.4);
+      bar.rotation.z = sx * 0.13;
     }
-    const roof = add(new THREE.Mesh(new THREE.BoxGeometry(1.45, 0.12, 0.5), M.chrome));
-    roof.position.set(0, 2.5, -0.45);
-    const grille = add(new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.4, 0.2), M.dark));
-    grille.position.set(0, 1.0, 1.0);
+    const roof = add(new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.12, 0.62), M.chrome));
+    roof.position.set(0, 2.44, -0.4);
+    const bash = add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.1, 1.5, 8), M.chrome));
+    bash.position.set(0, 0.78, 1.7);
+    bash.rotation.z = Math.PI / 2;
   },
 
   hotrod(add, M) {
-    // Very long nose, cab pushed right to the back.
-    const tub = add(new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.46, 1.5), M.body));
-    tub.position.set(0, 0.5, -0.45);
-    const hood = add(new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.4, 2.1), M.body));
-    hood.position.set(0, 0.52, 1.25);
-    const tip = add(new THREE.Mesh(new THREE.BoxGeometry(0.75, 0.24, 0.5), M.dark));
-    tip.position.set(0, 0.48, 2.45);
-    // Stacks: four chrome pipes standing proud of the hood.
+    // Long bonnet, cab shoved to the back, stacks through the top.
+    pan(add, M, { w: 1.18, len: 3.7, y: 0.26 });
+    const hood = add(new THREE.Mesh(new THREE.BoxGeometry(0.98, 0.42, 2.0), M.body));
+    hood.position.set(0, 0.52, 1.1);
+    const taper = add(new THREE.Mesh(new THREE.ConeGeometry(0.5, 0.9, 4), M.body));
+    taper.position.set(0, 0.5, 2.3);
+    taper.rotation.set(Math.PI / 2, 0, Math.PI / 4);
+    rails(add, M, { w: 1.28, len: 3.2, y: 0.4 });
+    seat(add, M, { z: -0.9, y: 0.34 });
     for (const sx of [-1, 1]) {
-      for (const dz of [0.55, 1.15]) {
-        const stack = add(new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.09, 0.62, 8), M.chrome));
-        stack.position.set(sx * 0.6, 0.95, dz);
-        stack.rotation.x = -0.28;
+      for (const dz of [0.6, 1.2, 1.8]) {
+        const stack = add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.085, 0.5, 8), M.chrome));
+        stack.position.set(sx * 0.56, 0.86, dz);
+        stack.rotation.x = -0.3;
       }
     }
-    const spoiler = add(new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.1, 0.42), M.trim));
-    spoiler.position.set(0, 1.05, -1.3);
+    const spoiler = add(new THREE.Mesh(new THREE.BoxGeometry(1.44, 0.09, 0.4), M.trim));
+    spoiler.position.set(0, 1.0, -1.55);
     for (const sx of [-1, 1]) {
-      const stay = add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.34, 0.12), M.trim));
-      stay.position.set(sx * 0.5, 0.88, -1.3);
+      const stay = add(new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.4, 0.1), M.trim));
+      stay.position.set(sx * 0.48, 0.8, -1.55);
     }
   },
 
   bubble(add, M) {
-    // One rounded pod: the only variant with no hard edges at all.
-    const shell = add(new THREE.Mesh(new THREE.SphereGeometry(0.92, 18, 14), M.body));
-    shell.position.set(0, 0.78, -0.05);
-    shell.scale.set(0.92, 0.78, 1.12);
-    const skirt = add(new THREE.Mesh(new THREE.CylinderGeometry(0.86, 0.95, 0.3, 18), M.dark));
-    skirt.position.set(0, 0.34, -0.05);
+    // A pod, but still on a kart floor with its wheels outside the shell.
+    pan(add, M, { w: 1.16, len: 2.1, y: 0.24 });
+    const shell = add(new THREE.Mesh(new THREE.SphereGeometry(0.82, 20, 14), M.body));
+    shell.position.set(0, 0.74, -0.06);
+    shell.scale.set(0.94, 0.8, 1.06);
     const canopy = add(new THREE.Mesh(
-      new THREE.SphereGeometry(0.62, 16, 12, 0, Math.PI * 2, 0, Math.PI * 0.55), M.visor,
+      new THREE.SphereGeometry(0.56, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.52), M.visor,
     ));
-    canopy.position.set(0, 1.12, 0.12);
-    const light = add(new THREE.Mesh(new THREE.SphereGeometry(0.16, 10, 8), M.chrome));
-    light.position.set(0, 0.72, 1.0);
+    canopy.position.set(0, 1.04, 0.16);
+    const lip = add(new THREE.Mesh(new THREE.TorusGeometry(0.72, 0.09, 8, 18), M.dark));
+    lip.position.set(0, 0.4, -0.06);
+    lip.rotation.x = Math.PI / 2;
+    const lamp = add(new THREE.Mesh(new THREE.SphereGeometry(0.15, 10, 8), M.chrome));
+    lamp.position.set(0, 0.66, 0.92);
   },
 
   tractor(add, M) {
-    // Upright cab over a narrow snout, the way a real one reads from behind.
-    const snout = add(new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 1.5), M.body));
-    snout.position.set(0, 0.85, 0.95);
-    const cab = add(new THREE.Mesh(new THREE.BoxGeometry(1.35, 0.85, 1.25), M.body));
-    cab.position.set(0, 1.15, -0.45);
-    const chimney = add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.12, 0.95, 8), M.chrome));
-    chimney.position.set(0.42, 1.55, 1.2);
-    const lid = add(new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.08, 8), M.dark));
-    lid.position.set(0.42, 2.05, 1.2);
-    // Rear fenders arched over the big back wheels.
+    // Narrow bonnet up front, upright cab, big arches over the back wheels.
+    pan(add, M, { w: 1.1, len: 2.7, y: 0.66 });
+    const bonnet = add(new THREE.Mesh(new THREE.BoxGeometry(0.84, 0.48, 1.4), M.body));
+    bonnet.position.set(0, 0.96, 0.92);
+    const round = add(new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.84, 12), M.body));
+    round.position.set(0, 0.96, 1.58);
+    round.rotation.z = Math.PI / 2;
+    const cab = add(new THREE.Mesh(new THREE.BoxGeometry(1.24, 0.78, 1.1), M.body));
+    cab.position.set(0, 1.18, -0.44);
+    seat(add, M, { z: -0.46, y: 1.0 });
+    const chimney = add(new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.11, 0.9, 8), M.chrome));
+    chimney.position.set(0.38, 1.58, 1.18);
+    const lid = add(new THREE.Mesh(new THREE.CylinderGeometry(0.15, 0.15, 0.07, 8), M.dark));
+    lid.position.set(0.38, 2.05, 1.18);
     for (const sx of [-1, 1]) {
-      const fender = add(new THREE.Mesh(
-        new THREE.TorusGeometry(0.72, 0.09, 6, 12, Math.PI), M.dark,
-      ));
-      fender.position.set(sx * 0.78, 0.7, -0.85);
-      fender.rotation.y = Math.PI / 2;
+      const arch = add(new THREE.Mesh(new THREE.TorusGeometry(0.74, 0.1, 6, 12, Math.PI), M.dark));
+      arch.position.set(sx * 0.8, 0.66, -0.9);
+      arch.rotation.y = Math.PI / 2;
     }
-    const grille = add(new THREE.Mesh(new THREE.BoxGeometry(0.8, 0.34, 0.18), M.trim));
-    grille.position.set(0, 0.85, 1.72);
+    const grille = add(new THREE.Mesh(new THREE.BoxGeometry(0.74, 0.3, 0.16), M.trim));
+    grille.position.set(0, 0.96, 1.9);
   },
 
   rocket(add, M) {
-    // Low, finned and pointed: a sled with an engine strapped on.
-    const fuse = add(new THREE.Mesh(new THREE.CapsuleGeometry(0.46, 1.5, 6, 12), M.body));
-    fuse.position.set(0, 0.62, 0.05);
+    // Kart floor, bullet body, fins and a nozzle.
+    pan(add, M, { w: 1.0, len: 3.1, y: 0.26 });
+    const fuse = add(new THREE.Mesh(new THREE.CapsuleGeometry(0.4, 1.3, 8, 14), M.body));
+    fuse.position.set(0, 0.62, 0.1);
     fuse.rotation.x = Math.PI / 2;
-    const cone = add(new THREE.Mesh(new THREE.ConeGeometry(0.44, 0.95, 12), M.dark));
-    cone.position.set(0, 0.62, 1.62);
+    const cone = add(new THREE.Mesh(new THREE.ConeGeometry(0.4, 1.0, 14), M.dark));
+    cone.position.set(0, 0.62, 1.55);
     cone.rotation.x = Math.PI / 2;
-    // Three fins, the feature that names it.
-    for (const [fx, rz] of [[-1, 0.5], [1, -0.5]]) {
-      const fin = add(new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.62, 0.8), M.trim));
-      fin.position.set(fx * 0.5, 0.72, -0.95);
-      fin.rotation.z = rz * 0.34;
+    seat(add, M, { z: -0.7, y: 0.5 });
+    for (const sx of [-1, 1]) {
+      const fin = add(new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.58, 0.76), M.trim));
+      fin.position.set(sx * 0.44, 0.68, -1.0);
+      fin.rotation.z = sx * -0.3;
     }
-    const tail = add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.78, 0.7), M.trim));
-    tail.position.set(0, 1.05, -1.0);
-    const nozzle = add(new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.46, 0.5, 12), M.chrome));
-    nozzle.position.set(0, 0.62, -1.2);
+    const tail = add(new THREE.Mesh(new THREE.BoxGeometry(0.09, 0.72, 0.66), M.trim));
+    tail.position.set(0, 1.0, -1.05);
+    const nozzle = add(new THREE.Mesh(new THREE.CylinderGeometry(0.3, 0.42, 0.46, 14), M.chrome));
+    nozzle.position.set(0, 0.62, -1.3);
     nozzle.rotation.x = Math.PI / 2;
+    const ring = add(new THREE.Mesh(new THREE.TorusGeometry(0.42, 0.06, 6, 16), M.chrome));
+    ring.position.set(0, 0.62, -1.5);
   },
 };
+
+/* ── Shared kart parts ─────────────────────────────────────────────── */
+
+/** The flat floor the whole kart is built on. */
+function pan(add, M, { w, len, y }) {
+  const floor = add(new THREE.Mesh(new THREE.BoxGeometry(w, 0.16, len), M.dark));
+  floor.position.set(0, y, 0);
+  const deck = add(new THREE.Mesh(new THREE.BoxGeometry(w * 0.86, 0.1, len * 0.7), M.body));
+  deck.position.set(0, y + 0.12, -0.05);
+}
+
+/** Swept nose: the part that stops a kart looking like a crate. */
+function noseCone(add, M, { z, w, y }) {
+  const wedge = add(new THREE.Mesh(new THREE.CylinderGeometry(0.1, w * 0.5, 0.95, 12), M.body));
+  wedge.position.set(0, y + 0.06, z);
+  wedge.rotation.x = Math.PI / 2;
+  const tip = add(new THREE.Mesh(new THREE.SphereGeometry(0.13, 10, 8), M.dark));
+  tip.position.set(0, y + 0.06, z + 0.5);
+  const bar = add(new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.07, w * 1.05, 8), M.trim));
+  bar.position.set(0, y - 0.04, z + 0.34);
+  bar.rotation.z = Math.PI / 2;
+}
+
+/** Tube rails down each flank, joining nose to engine. */
+function rails(add, M, { w, len, y }) {
+  for (const sx of [-1, 1]) {
+    const rail = add(new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, len, 8), M.trim));
+    rail.position.set(sx * w * 0.5, y, 0.1);
+    rail.rotation.x = Math.PI / 2;
+  }
+}
+
+/** Bucket seat with a back the driver sits against. */
+function seat(add, M, { z, y }) {
+  const base = add(new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.12, 0.5), M.trim));
+  base.position.set(0, y + 0.1, z + 0.18);
+  const back = add(new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.62, 0.14), M.trim));
+  back.position.set(0, y + 0.42, z - 0.1);
+  back.rotation.x = -0.16;
+  for (const sx of [-1, 1]) {
+    const bolster = add(new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.42, 0.34), M.trim));
+    bolster.position.set(sx * 0.32, y + 0.34, z + 0.06);
+  }
+}
+
+function engine(add, M, { z, y, w }) {
+  const block = add(new THREE.Mesh(new THREE.BoxGeometry(w, 0.46, 0.56), M.trim));
+  block.position.set(0, y, z);
+  const cover = add(new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.22, w * 0.7, 10), M.chrome));
+  cover.position.set(0, y + 0.22, z);
+  cover.rotation.z = Math.PI / 2;
+}
+
+function pipes(add, M, { z, y, spread, len, tilt }) {
+  for (const sx of [-1, 1]) {
+    const pipe = add(new THREE.Mesh(new THREE.CylinderGeometry(0.075, 0.095, len, 8), M.chrome));
+    pipe.position.set(sx * spread, y, z);
+    pipe.rotation.x = tilt;
+  }
+}
 
 /**
  * Character heads. The body underneath is shared; only what sits above the

@@ -180,55 +180,208 @@ function toast(msg, ms = 2200) {
 // Prefill from last time so returning players are not retyping their name.
 if (nameInput && !nameInput.value) nameInput.value = recallName();
 
-/* ── Garage ─────────────────────────────────────────────────────────── */
-const characterBlurbEl = document.getElementById('character-blurb');
-const kartBlurbEl = document.getElementById('kart-blurb');
-
+/* ── Customize ──────────────────────────────────────────────────────── */
 /**
- * Build one picker. Both grids behave identically, so they share this rather
- * than growing two copies that drift apart.
+ * A full screen with a live 3D preview, rather than a grid of swatches.
+ *
+ * The preview builds the *actual game mesh* on its own tiny renderer, so what
+ * you are shown is what you will drive — an illustration of a kart would drift
+ * out of date the first time the real one changed.
  */
-function buildPicker(hostId, table, blurbEl, key, swatchOf) {
-  const host = document.getElementById(hostId);
-  if (!host) return () => {};
-  const buttons = new Map();
+const czEl = document.getElementById('customize');
+const czOptionsEl = document.getElementById('cz-options');
+const czBlurbEl = document.getElementById('cz-blurb');
+const czNameEl = document.getElementById('cz-name');
+const czSubEl = document.getElementById('cz-sub');
+const czCanvas = document.getElementById('cz-canvas');
+const garageSummaryEl = document.getElementById('garage-summary');
 
-  const paint = () => {
-    for (const [id, btn] of buttons) btn.classList.toggle('selected', id === look[key]);
-    const def = table[look[key]];
-    if (blurbEl && def) blurbEl.textContent = def.blurb;
-  };
+let czTab = 'character';
+let czPreview = null;
 
+const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
+
+/** The colour a kart gets in game is by join order, so preview a fixed one. */
+const PREVIEW_COLOR = 0xe74c3c;
+
+function makePreview() {
+  if (czPreview || !czCanvas) return czPreview;
+  const renderer = new THREE.WebGLRenderer({ canvas: czCanvas, antialias: true, alpha: true });
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  renderer.outputColorSpace = THREE.SRGBColorSpace;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+  const scene = new THREE.Scene();
+  scene.add(new THREE.HemisphereLight(0xdceaff, 0x2a3550, 1.1));
+  const key = new THREE.DirectionalLight(0xffffff, 2.2);
+  key.position.set(4, 7, 5);
+  scene.add(key);
+  const rim = new THREE.DirectionalLight(0x8fd2ff, 1.0);
+  rim.position.set(-5, 3, -4);
+  scene.add(rim);
+
+  const cam = new THREE.PerspectiveCamera(38, 1, 0.1, 60);
+  const turntable = new THREE.Group();
+  scene.add(turntable);
+
+  czPreview = { renderer, scene, cam, turntable, mesh: null, spin: 0 };
+  return czPreview;
+}
+
+function refreshPreview() {
+  const pv = makePreview();
+  if (!pv) return;
+  if (pv.mesh) {
+    pv.turntable.remove(pv.mesh.group);
+    pv.mesh.dispose();
+  }
+  pv.mesh = createKartMesh(PREVIEW_COLOR, '', {
+    showTag: false, character: look.character, kart: look.kart,
+  });
+  pv.turntable.add(pv.mesh.group);
+
+  // Frame from the model's own size rather than a fixed distance. The chassis
+  // range from a 2.1 m pod to a 4.8 m hot rod, so one camera position either
+  // cropped the big ones or left the small ones swimming in empty space.
+  const box = new THREE.Box3();
+  pv.mesh.group.traverse((o) => {
+    // Skip the hidden status effects — the shield bubble is a 1.6 m sphere and
+    // would dictate the framing for every kart.
+    if (o.isMesh && o.visible) box.expandByObject(o);
+  });
+  const size = box.getSize(new THREE.Vector3());
+  pv.centreY = (box.min.y + box.max.y) / 2;
+  // Radius of the sphere enclosing the model, plus a margin, converted to a
+  // distance through the camera's half-angle.
+  const radius = Math.max(size.x, size.y, size.z) * 0.5;
+  pv.dist = (radius * 1.18) / Math.tan((pv.cam.fov * Math.PI) / 360);
+
+  const char = CHARACTERS[look.character];
+  const kart = KARTS[look.kart];
+  if (czNameEl) czNameEl.textContent = char.name;
+  if (czSubEl) czSubEl.textContent = `driving the ${kart.name}`;
+  const mini = document.getElementById('garage-preview-mini');
+  if (mini) {
+    mini.innerHTML = '';
+    for (const [def, role, colour] of [
+      [char, 'Driver', hex(char.accent)],
+      [kart, 'Kart', hex(PREVIEW_COLOR)],
+    ]) {
+      const row = document.createElement('div');
+      row.className = 'chip';
+      const dot = document.createElement('span');
+      dot.className = 'dot';
+      dot.style.background = colour;
+      const label = document.createElement('span');
+      label.textContent = def.name;
+      const tag = document.createElement('span');
+      tag.className = 'role';
+      tag.textContent = role;
+      row.append(dot, label, tag);
+      mini.appendChild(row);
+    }
+  }
+  if (garageSummaryEl) garageSummaryEl.textContent = kart.blurb;
+}
+
+function drawPreview(dt) {
+  const pv = czPreview;
+  if (!pv || czEl.classList.contains('hidden')) return;
+
+  const w = czCanvas.clientWidth || 1;
+  const h = czCanvas.clientHeight || 1;
+  if (czCanvas.width !== w || czCanvas.height !== h) {
+    pv.renderer.setSize(w, h, false);
+    pv.cam.aspect = w / h;
+    pv.cam.updateProjectionMatrix();
+  }
+
+  pv.spin += dt * 0.55;
+  pv.turntable.rotation.y = pv.spin;
+  // Slightly above and ahead: the angle that shows the nose and the driver.
+  const d = pv.dist ?? 6.2;
+  const cy = pv.centreY ?? 0.85;
+  pv.cam.position.set(0, cy + d * 0.28, d);
+  pv.cam.lookAt(0, cy, 0);
+
+  if (pv.mesh) {
+    pv.mesh.apply({
+      x: 0, y: 0, z: 0, yaw: 0, speed: 0, yawRate: 0, steer: 0, accel: 0,
+      grounded: true, alive: true,
+    }, dt);
+  }
+  pv.renderer.render(pv.scene, pv.cam);
+}
+
+function renderOptions() {
+  if (!czOptionsEl) return;
+  const table = czTab === 'character' ? CHARACTERS : KARTS;
+  const chip = czTab === 'character'
+    ? (d) => `linear-gradient(140deg, ${hex(d.skin)} 0 52%, ${hex(d.accent)} 52% 100%)`
+    : (d) => `linear-gradient(180deg, #7f97b5 0 ${Math.round(88 - d.wheel * 46)}%,`
+      + ` #262a33 ${Math.round(88 - d.wheel * 46)}% 100%)`;
+
+  czOptionsEl.innerHTML = '';
   for (const def of Object.values(table)) {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.title = def.blurb;
+    btn.classList.toggle('selected', def.id === look[czTab]);
 
     const swatch = document.createElement('span');
-    swatch.className = 'pick-swatch';
-    swatch.style.background = swatchOf(def);
+    swatch.className = 'cz-chip';
+    swatch.style.background = chip(def);
     btn.append(swatch, document.createTextNode(def.name));
 
     btn.addEventListener('click', () => {
-      look[key] = def.id;
+      look[czTab] = def.id;
       rememberLook();
-      paint();
-      // Already in a match or a waiting room? Apply it live.
-      if (joined) socket.emit(EVENT.CUSTOMIZE, { character: look.character, kart: look.kart });
+      applyLook();
+      renderOptions();
     });
-    buttons.set(def.id, btn);
-    host.appendChild(btn);
+    czOptionsEl.appendChild(btn);
   }
-  paint();
-  return paint;
+  const current = table[look[czTab]];
+  if (czBlurbEl && current) czBlurbEl.textContent = current.blurb;
 }
 
-const hex = (n) => `#${n.toString(16).padStart(6, '0')}`;
-buildPicker('pick-character', CHARACTERS, characterBlurbEl, 'character',
-  (d) => `linear-gradient(135deg, ${hex(d.skin)} 0 55%, ${hex(d.accent)} 55% 100%)`);
-buildPicker('pick-kart', KARTS, kartBlurbEl, 'kart',
-  (d) => `linear-gradient(180deg, #5b6b82 0 ${Math.round(100 - d.wheel * 60)}%,`
-    + ` #23242a ${Math.round(100 - d.wheel * 60)}% 100%)`);
+/** Persist, redraw the preview, and tell the server if we are already in. */
+function applyLook() {
+  rememberLook();
+  refreshPreview();
+  if (joined) socket.emit(EVENT.CUSTOMIZE, { character: look.character, kart: look.kart });
+}
+
+for (const tab of document.querySelectorAll('.cz-tab')) {
+  tab.addEventListener('click', () => {
+    czTab = tab.dataset.tab;
+    for (const t of document.querySelectorAll('.cz-tab')) t.classList.toggle('selected', t === tab);
+    renderOptions();
+  });
+}
+
+document.getElementById('btn-customize')?.addEventListener('click', () => {
+  czEl.classList.remove('hidden');
+  refreshPreview();
+  renderOptions();
+});
+document.getElementById('cz-back')?.addEventListener('click', () => czEl.classList.add('hidden'));
+
+document.getElementById('cz-random')?.addEventListener('click', () => {
+  const chars = Object.keys(CHARACTERS);
+  const karts = Object.keys(KARTS);
+  look.character = chars[Math.floor(Math.random() * chars.length)];
+  look.kart = karts[Math.floor(Math.random() * karts.length)];
+  applyLook();
+  renderOptions();
+});
+
+// Escape closes it, like any other modal.
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !czEl.classList.contains('hidden')) czEl.classList.add('hidden');
+});
+
+refreshPreview();
+renderOptions();
 
 for (const card of document.querySelectorAll('.map-card')) {
   card.addEventListener('click', () => {
@@ -912,6 +1065,9 @@ function frame(now) {
   }
 
   renderer.render(scene, camera);
+  // The customize screen has its own tiny renderer; spin it from the same
+  // clock rather than starting a second animation loop.
+  drawPreview(dt);
 }
 
 /**

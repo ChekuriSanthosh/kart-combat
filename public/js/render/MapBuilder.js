@@ -460,6 +460,85 @@ function buildDecor(d, materials, theme) {
       g.rotation.y = d.rotY || 0;
       break;
     }
+    case 'cornPatch': {
+      // Two metres of corn with no collider: it hides people without stopping
+      // them. Every stalk is the same mesh in a different place, so the whole
+      // field is two draw calls however dense it gets.
+      const stalkMat = materials.make({ color: 0x4f8a2b, roughness: 1, metalness: 0 });
+      const leafMat = materials.make({ color: 0x74ad3c, roughness: 1, metalness: 0 });
+      const total = d.rows * d.per;
+
+      const stalks = new THREE.InstancedMesh(
+        new THREE.CylinderGeometry(0.055, 0.085, 1, 5), stalkMat, total,
+      );
+      const leaves = new THREE.InstancedMesh(
+        new THREE.ConeGeometry(0.34, 1.1, 4), leafMat, total,
+      );
+      stalks.castShadow = true;
+      leaves.castShadow = true;
+
+      const mat = new THREE.Matrix4();
+      const quat = new THREE.Quaternion();
+      const pos = new THREE.Vector3();
+      const scl = new THREE.Vector3();
+      let i = 0;
+      for (let r = 0; r < d.rows; r++) {
+        for (let c = 0; c < d.per; c++) {
+          // Jitter is derived from the indices rather than random, so the
+          // field is identical on every client without needing a seed.
+          const jx = (((r * 73 + c * 149) % 100) / 100 - 0.5) * 0.9;
+          const jz = (((r * 191 + c * 37) % 100) / 100 - 0.5) * 0.9;
+          const h = 2.0 + ((r * 17 + c * 29) % 60) / 100;
+          const x = -d.w / 2 + (c + 0.5) * (d.w / d.per) + jx;
+          const z = -d.d / 2 + (r + 0.5) * (d.d / d.rows) + jz;
+          const spin = ((r * 53 + c * 97) % 628) / 100;
+
+          pos.set(x, h * 0.5, z);
+          quat.setFromAxisAngle(UP, spin);
+          scl.set(1, h, 1);
+          mat.compose(pos, quat, scl);
+          stalks.setMatrixAt(i, mat);
+
+          pos.set(x, h * 0.78, z);
+          scl.set(1, 1, 1);
+          mat.compose(pos, quat, scl);
+          leaves.setMatrixAt(i, mat);
+          i++;
+        }
+      }
+      stalks.instanceMatrix.needsUpdate = true;
+      leaves.instanceMatrix.needsUpdate = true;
+      g.add(stalks, leaves);
+      g.rotation.y = d.rotY || 0;
+      break;
+    }
+    case 'waterTower': {
+      const tankMat = materials.make({ color: 0xc9d2da, roughness: 0.5, metalness: 0.45 });
+      const legMat = materials.make({ color: 0x7c848d, roughness: 0.7, metalness: 0.3 });
+      const tank = new THREE.Mesh(new THREE.CylinderGeometry(d.r, d.r, 4.6, 14), tankMat);
+      tank.position.y = 2.3;
+      tank.castShadow = true;
+      g.add(tank);
+      const roof = new THREE.Mesh(new THREE.ConeGeometry(d.r * 1.1, 1.8, 14), tankMat);
+      roof.position.y = 5.5;
+      roof.castShadow = true;
+      g.add(roof);
+      const band = new THREE.Mesh(new THREE.CylinderGeometry(d.r * 1.02, d.r * 1.02, 0.5, 14),
+        materials.make({ color: 0xb8352c, roughness: 0.7, metalness: 0.1 }));
+      band.position.y = 2.6;
+      g.add(band);
+      // Splayed legs down to the base of the collider below it.
+      for (let i = 0; i < 4; i++) {
+        const a = (i / 4) * Math.PI * 2 + Math.PI / 4;
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.22, 11, 6), legMat);
+        leg.position.set(Math.cos(a) * d.r * 0.62, -5.5, Math.sin(a) * d.r * 0.62);
+        leg.rotation.x = Math.sin(a) * 0.1;
+        leg.rotation.z = -Math.cos(a) * 0.1;
+        leg.castShadow = true;
+        g.add(leg);
+      }
+      break;
+    }
     case 'voidGrid': {
       const grid = new THREE.GridHelper(d.size, 48, theme.accent, theme.accentAlt);
       grid.material.transparent = true;
