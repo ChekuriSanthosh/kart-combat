@@ -8,7 +8,8 @@
 
 import { chromium } from 'playwright';
 
-const BASE = process.argv[2] || 'http://localhost:3100';
+// PORT matches with-server.sh, so `PORT=3300 npm run X` tests the server it just started.
+const BASE = process.argv[2] || `http://localhost:${process.env.PORT || 3100}`;
 let failures = 0;
 const ok = (m) => console.log(`  ok    ${m}`);
 const fail = (m) => { failures++; console.log(`  FAIL  ${m}`); };
@@ -32,6 +33,7 @@ try {
   // A private match now gathers in a waiting room first, so the code is read
   // from there; the in-match HUD only appears once the host starts.
   const host = await openClient('HostRacer');
+  await host.page.click('#btn-create');
   await host.page.click('#btn-create-party');
   await host.page.waitForSelector('#waiting:not(.hidden)');
   const code = (await host.page.textContent('#waiting-code')).trim();
@@ -96,6 +98,7 @@ try {
 
   // ── A bad code must not silently drop you somewhere else ──
   const stray = await openClient('Stray');
+  await stray.page.click('#btn-join');
   await stray.page.fill('#join-code', 'ZZZZZ');
   await stray.page.click('#btn-join-code');
   await stray.page.waitForTimeout(900);

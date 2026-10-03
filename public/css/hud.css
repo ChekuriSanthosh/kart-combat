@@ -1,0 +1,918 @@
+/* Kart Combat — in-match HUD and the round screens: rank and leaderboard
+   (top-left), health and clock (top-centre), buttons and FPS/ping
+   (top-right), the round weapon slot (bottom-right), the death → spectate →
+   continue overlays, round over / winners, the between-rounds intermission,
+   and the in-match settings and invite modals. Loaded last, after base.css
+   and menu.css, and built from base.css's tk- kit.
+
+   Sizes are written in --u, one "reference pixel": 1px on the 1400x820
+   frames the layout was measured from, shrinking with whichever viewport
+   side is tighter so the HUD keeps its proportions on a small window
+   instead of crowding the arena. Every size is clamped so it stays
+   legible on a phone and does not balloon on a 4K monitor. */
+
+:root {
+  --u: min(0.0714vw, 0.122vh);
+  --hud-edge: clamp(6px, calc(10 * var(--u)), 16px);
+  --hud-icon: clamp(38px, calc(58 * var(--u)), 72px);
+  --hud-pill-h: calc(var(--hud-icon) * 0.8);
+  --hud-text: clamp(16px, calc(28 * var(--u)), 34px);
+  --hud-board-w: clamp(190px, calc(264 * var(--u)), 320px);
+  /* Fill colour of the round slot and the leaderboard glass: see-through
+     enough that the arena reads behind them, never dark. */
+  --hud-glass: rgba(118, 148, 232, 0.72);
+  --hud-cyan: #00e5ff;
+  --hud-me: #fff23a;
+}
+
+/* ── Shell ───────────────────────────────────────────────────────────── */
+
+#hud {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  /* The overlay itself must not eat clicks — they belong to the game, which
+     fires on pointerdown. Anything in here you are meant to actually click
+     has to opt back in; see below. */
+  pointer-events: none;
+  color: var(--tk-white);
+  font-family: var(--tk-font);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Interactive HUD bits opt back in. Without this a button renders perfectly
+   and is completely dead: every click passes straight through to the canvas
+   underneath and fires a weapon instead. */
+#hud button {
+  pointer-events: auto;
+}
+
+/* Big outlined white text drawn straight over the arena: the death message,
+   ROUND OVER, the winners. A thin blue outline plus a deeper blue extrusion
+   underneath, both in em so they scale with the text. */
+.hud-shout {
+  margin: 0;
+  font-family: var(--tk-font);
+  font-weight: 800;
+  line-height: 1.04;
+  color: var(--tk-white);
+  text-align: center;
+  text-shadow:
+    0.022em 0 0 var(--tk-blue-600), -0.022em 0 0 var(--tk-blue-600),
+    0 0.022em 0 var(--tk-blue-600), 0 -0.022em 0 var(--tk-blue-600),
+    0.016em 0.016em 0 var(--tk-blue-600), -0.016em 0.016em 0 var(--tk-blue-600),
+    0.016em -0.016em 0 var(--tk-blue-600), -0.016em -0.016em 0 var(--tk-blue-600),
+    0 0.075em 0 #0a63cf,
+    0 0.11em 0.08em rgba(4, 30, 90, 0.35);
+}
+.hud-shout .killer,
+.hud-shout .winner-name { color: var(--hud-cyan); }
+
+/* Small round "i" on the corner of a pill. */
+.info-dot {
+  position: absolute;
+  top: calc(var(--hud-icon) * -0.1);
+  right: calc(var(--hud-icon) * -0.26);
+  z-index: 2;
+  display: grid;
+  place-items: center;
+  width: calc(var(--hud-icon) * 0.64);
+  height: calc(var(--hud-icon) * 0.64);
+  padding: 0;
+  font-family: var(--tk-font);
+  font-size: calc(var(--hud-icon) * 0.42);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--tk-white);
+  text-shadow: var(--tk-outline);
+  cursor: pointer;
+  border: 2px solid #dff0ff;
+  border-radius: 50%;
+  background: linear-gradient(180deg, #3a9cf6, #1667cf);
+  box-shadow: 0 2px 0 var(--tk-blue-800);
+}
+.info-dot.active { background: linear-gradient(180deg, #ffd23f, #ff9a1f); border-color: #fff3c4; }
+.info-dot:focus-visible { outline: 3px solid var(--tk-yellow); outline-offset: 2px; }
+
+/* ── Top-left: rank pill ─────────────────────────────────────────────── */
+
+#rank-pill {
+  position: absolute;
+  top: var(--hud-edge);
+  left: clamp(10px, calc(34 * var(--u)), 44px);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  height: var(--hud-icon);
+}
+#rank-pill .rank-icon {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: var(--hud-icon);
+  height: var(--hud-icon);
+  border: 3px solid var(--tk-blue-500);
+  border-radius: 28%;
+  background: var(--tk-white);
+  box-shadow: 0 3px 0 var(--tk-blue-800);
+}
+#rank-pill .rank-icon svg { width: 82%; height: 82%; }
+#rank-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--hud-pill-h);
+  min-width: calc(var(--hud-icon) * 2.85);
+  margin-left: calc(var(--hud-icon) * -0.32);
+  padding: 0 calc(var(--hud-icon) * 0.66) 0 calc(var(--hud-icon) * 0.5);
+  font-size: var(--hud-text);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  color: var(--tk-white);
+  text-shadow: var(--tk-outline);
+  border: 2px solid #5fb0ff;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #34a0f8, #2389ea 55%, #1d7ee2);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.28), 0 3px 0 #0360c4;
+}
+/* Superscript without disturbing the line box, so the pill does not grow. */
+#rank-ord {
+  position: relative;
+  top: -0.48em;
+  font-size: 0.58em;
+  margin-left: 0.04em;
+}
+.rank-of { white-space: pre; }
+
+/* ── Top-left: leaderboard ───────────────────────────────────────────── */
+
+#leaderboard {
+  position: absolute;
+  top: calc(var(--hud-edge) + var(--hud-icon) + 6 * var(--u) + 2px);
+  left: var(--hud-edge);
+  z-index: 1;
+  width: var(--hud-board-w);
+  padding: calc(3 * var(--u)) 0;
+  background: var(--hud-glass);
+  border: 3px solid #a6d6ff;
+  border-radius: 10px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.2), 0 3px 0 rgba(11, 42, 107, 0.25);
+}
+
+#leaderboard-list,
+#im-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+#leaderboard-list li,
+#im-list li {
+  position: relative;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 0.5em;
+  height: clamp(22px, calc(33.5 * var(--u)), 40px);
+  padding: 0 0.75em 0 0.4em;
+  font-size: clamp(13px, calc(17.5 * var(--u)), 21px);
+  font-weight: 800;
+  line-height: 1;
+  text-shadow: var(--tk-outline);
+}
+#leaderboard-list li.me,
+#im-list li.me {
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.14));
+}
+#leaderboard-list li.me .name,
+#leaderboard-list li.me .score,
+#im-list li.me .name,
+#im-list li.me .score { color: var(--hud-me); }
+#leaderboard-list .name,
+#im-list .name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#leaderboard-list .score,
+#im-list .score {
+  min-width: 1.2em;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+/* Folded: the leaders, a dotted gap, then you. */
+#leaderboard-list li.folded { display: none; }
+#leaderboard-list li.gap-before { margin-top: 0.95em; }
+#leaderboard-list li.gap-before::before {
+  content: '• • • • • • •';
+  position: absolute;
+  bottom: 100%;
+  left: 0;
+  right: 0;
+  font-size: 0.62em;
+  line-height: 1.5;
+  text-align: center;
+  letter-spacing: 0.08em;
+}
+
+/* Hex badge in the kart's colour with the position in it. clip-path cannot
+   draw a border, so the element is the white rim and ::before the fill. */
+.lb-hex {
+  --hex-fill: var(--tk-blue-600);
+  position: relative;
+  isolation: isolate;
+  display: grid;
+  place-items: center;
+  width: 1.48em;
+  height: 1.62em;
+  font-size: 0.78em;
+  font-variant-numeric: tabular-nums;
+  background: #eaf5ff;
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+.lb-hex::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  z-index: -1;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.28), rgba(255, 255, 255, 0) 60%),
+    var(--hex-fill);
+  clip-path: inherit;
+}
+
+/* ── Top-centre: health and clock ────────────────────────────────────── */
+
+#top-center {
+  position: absolute;
+  top: var(--hud-edge);
+  left: 50%;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: clamp(18px, calc(36 * var(--u)), 48px);
+  height: var(--hud-icon);
+  transform: translateX(-50%);
+}
+.hud-icon {
+  position: absolute;
+  top: 50%;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  transform: translateY(-50%);
+  filter: drop-shadow(0 3px 0 rgba(3, 80, 190, 0.55));
+}
+.hud-icon svg { width: 100%; height: 100%; }
+
+#health {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: clamp(160px, calc(215 * var(--u)), 270px);
+  height: 100%;
+}
+#health .heart-icon {
+  left: calc(var(--hud-icon) * -0.08);
+  width: calc(var(--hud-icon) * 1.12);
+  height: calc(var(--hud-icon) * 1.04);
+}
+#health-bar {
+  flex: 1;
+  height: var(--hud-pill-h);
+  margin-left: calc(var(--hud-icon) * 0.42);
+  /* Room for the heart, which overlaps the track's left end. */
+  padding: calc(var(--hud-pill-h) * 0.12) calc(var(--hud-pill-h) * 0.14) calc(var(--hud-pill-h) * 0.12) calc(var(--hud-icon) * 0.58);
+  border: 2px solid #5fb0ff;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #1977da, #1f8cec);
+  box-shadow: inset 0 3px 3px rgba(2, 40, 120, 0.35), 0 3px 0 #0360c4;
+}
+#health-fill {
+  height: 100%;
+  width: 100%;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #ffffff 0 52%, #c6e6ff 100%);
+  box-shadow: 0 1px 0 rgba(2, 40, 120, 0.25);
+  /* Drains rather than snapping, so a hit reads as a hit. */
+  transition: width 0.28s cubic-bezier(0.3, 0.7, 0.4, 1), background-color 0.2s;
+}
+#health.low #health-fill {
+  background: linear-gradient(180deg, #ffe3e3 0 52%, #ff9d9d 100%);
+  animation: low-pulse 0.9s ease-in-out infinite;
+}
+#health.hit #health-bar { animation: bar-hit 0.35s ease-out; }
+@keyframes low-pulse { 50% { filter: brightness(1.15); } }
+@keyframes bar-hit {
+  0% { transform: translateX(0); box-shadow: inset 0 3px 3px rgba(2, 40, 120, 0.35), 0 3px 0 #0360c4, 0 0 0 4px rgba(255, 74, 74, 0.8); }
+  30% { transform: translateX(-3px); }
+  60% { transform: translateX(3px); }
+  100% { transform: translateX(0); }
+}
+
+#match-timer {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: clamp(140px, calc(206 * var(--u)), 260px);
+  height: 100%;
+}
+#match-timer .clock-icon {
+  left: calc(var(--hud-icon) * -0.04);
+  width: calc(var(--hud-icon) * 1.06);
+  height: calc(var(--hud-icon) * 1.06);
+}
+#match-clock {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  height: var(--hud-pill-h);
+  margin-left: calc(var(--hud-icon) * 0.42);
+  padding: 0 calc(var(--hud-icon) * 0.3) 0 calc(var(--hud-icon) * 0.5);
+  font-size: var(--hud-text);
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--tk-white);
+  text-shadow: var(--tk-outline);
+  border: 2px solid #5fb0ff;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #34a0f8, #2389ea 55%, #1d7ee2);
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.28), 0 3px 0 #0360c4;
+}
+/* Last ten seconds: the clock earns attention rather than demanding it.
+   The pulse scales the pill only — #top-center owns the centring
+   translate, so animating its transform would knock it sideways. */
+#match-timer.urgent #match-clock {
+  background: linear-gradient(180deg, #ff7a6b, #ff4a4a 55%, #e2343a);
+  border-color: #ffc2bb;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.28), 0 3px 0 #a31d25;
+  animation: clock-pulse 1s ease-in-out infinite;
+}
+@keyframes clock-pulse { 50% { transform: scale(1.08); } }
+
+#match-info {
+  position: absolute;
+  top: calc(var(--hud-edge) + var(--hud-icon) + 12px);
+  left: 50%;
+  z-index: 3;
+  min-width: 220px;
+  padding: 10px 16px;
+  font-size: clamp(14px, calc(18 * var(--u)), 20px);
+  font-weight: 700;
+  line-height: 1.35;
+  text-align: center;
+  text-shadow: var(--tk-outline);
+  transform: translateX(-50%);
+}
+#match-info .info-head { font-size: 1.2em; font-weight: 800; }
+
+/* ── Top-right: buttons and FPS/ping ─────────────────────────────────── */
+
+#hud-buttons {
+  position: absolute;
+  top: var(--hud-edge);
+  /* The last slot is left for #btn-fullscreen, which lives outside #hud so
+     it also works on the menus, and is pinned into place below. */
+  right: calc(var(--hud-edge) + var(--hud-icon) + clamp(6px, calc(10 * var(--u)), 12px));
+  z-index: 2;
+  display: flex;
+  gap: clamp(6px, calc(10 * var(--u)), 12px);
+}
+#invite { display: flex; }
+#hud-buttons .tk-icon-btn,
+body:has(> #hud:not(.hidden)) #btn-fullscreen {
+  width: var(--hud-icon);
+  height: var(--hud-icon);
+  border-radius: 26%;
+  --tk-btn-top: #2f8ff0;
+  --tk-btn-bottom: #1360c8;
+  --tk-btn-edge: #0b3f8f;
+  --tk-btn-rim: #5fb0ff;
+  --tk-btn-depth: 3px;
+}
+#hud-buttons .tk-icon-btn svg { width: 64%; height: 64%; }
+/* Shows while you watch someone else; not a button. */
+#spectate-eye { cursor: default; pointer-events: none; }
+
+/* In a match the fullscreen button joins the top-right row. */
+body:has(> #hud:not(.hidden)) #btn-fullscreen {
+  top: var(--hud-edge);
+  right: var(--hud-edge);
+  bottom: auto;
+  left: auto;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  font-family: var(--tk-font);
+  font-size: calc(var(--hud-icon) * 0.5);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--tk-white);
+  text-shadow: var(--tk-outline);
+  cursor: pointer;
+  border: 3px solid var(--tk-btn-rim);
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0 46%, rgba(255, 255, 255, 0) 54%),
+    linear-gradient(180deg, var(--tk-btn-top), var(--tk-btn-bottom));
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.4),
+    0 var(--tk-btn-depth) 0 var(--tk-btn-edge),
+    0 calc(var(--tk-btn-depth) + 4px) 10px rgba(4, 20, 60, 0.28);
+}
+
+#net-stats {
+  position: absolute;
+  top: calc(var(--hud-edge) + var(--hud-icon) + 8 * var(--u) + 2px);
+  right: calc(var(--hud-edge) + 2px);
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  font-size: clamp(14px, calc(26 * var(--u)), 30px);
+  font-weight: 800;
+  line-height: 1.22;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  text-shadow:
+    0 2px 0 var(--tk-blue-600), 1px 0 0 var(--tk-blue-600), -1px 0 0 var(--tk-blue-600),
+    0 -1px 0 var(--tk-blue-600), 0 3px 3px rgba(4, 20, 60, 0.35);
+}
+
+/* ── Bottom-right: the weapon slot ───────────────────────────────────── */
+
+#weapon {
+  --slot: clamp(110px, calc(232 * var(--u)), 280px);
+  position: absolute;
+  right: var(--hud-edge);
+  bottom: var(--hud-edge);
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  width: var(--slot);
+  height: var(--slot);
+  border: clamp(3px, calc(6 * var(--u)), 7px) solid #8accff;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 40%, rgba(70, 150, 245, 0.5), rgba(28, 108, 225, 0.5) 70%);
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.12), 0 4px 0 rgba(8, 52, 140, 0.3);
+}
+#weapon-icon {
+  display: grid;
+  place-items: center;
+  width: 86%;
+  height: 86%;
+  font-size: calc(var(--slot) * 0.46);
+  line-height: 1;
+  filter: drop-shadow(0 4px 0 rgba(8, 40, 110, 0.32));
+}
+#weapon-icon svg { width: 100%; height: 100%; overflow: visible; }
+/* Cycling through the arsenal after opening a crate. */
+#weapon-icon.spinning { animation: slot-spin 0.18s linear infinite; }
+/* The moment it settles on what you actually won. */
+#weapon-icon.landed { animation: slot-land 0.45s cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes slot-spin {
+  0% { transform: translateY(-14%) scale(0.9); opacity: 0.55; }
+  60% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(14%) scale(0.9); opacity: 0.55; }
+}
+@keyframes slot-land {
+  0% { transform: scale(1.45); }
+  100% { transform: scale(1); }
+}
+#weapon.armed { box-shadow: inset 0 0 calc(var(--slot) * 0.12) rgba(255, 255, 255, 0.35), 0 4px 0 rgba(8, 52, 140, 0.3); }
+
+/* Ammo, or seconds left on a timed weapon, at the slot's lower left. */
+#weapon-count {
+  position: absolute;
+  left: -9%;
+  bottom: -1%;
+  width: 31%;
+  height: 31%;
+  min-width: 0;
+  padding: 0;
+  font-size: calc(var(--slot) * 0.15);
+  border: clamp(2px, calc(4 * var(--u)), 4px) solid #9cd4ff;
+  background: linear-gradient(180deg, #2a93ef, #1270dc);
+  box-shadow: 0 3px 0 var(--tk-blue-800);
+}
+#weapon-count.timed { animation: count-tick 1s ease-in-out infinite; }
+@keyframes count-tick { 0%, 100% { transform: scale(1); } 12% { transform: scale(1.14); } }
+
+#weapon-name {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  right: 50%;
+  min-height: 0;
+  padding: 0.25em 0.9em 0.3em;
+  font-size: clamp(14px, calc(22 * var(--u)), 26px);
+  white-space: nowrap;
+  opacity: 0;
+  transform: translateX(50%) scale(0.6);
+  transform-origin: 50% 100%;
+  transition: opacity 0.18s ease, transform 0.22s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+#weapon-name.show { opacity: 1; transform: translateX(50%) scale(1); }
+
+/* ── Transient bits ──────────────────────────────────────────────────── */
+
+#hint {
+  position: absolute;
+  bottom: clamp(10px, calc(20 * var(--u)), 26px);
+  left: 50%;
+  z-index: 1;
+  gap: 1.1em;
+  min-height: 0;
+  padding: 0.4em 1.1em 0.45em;
+  font-size: clamp(13px, calc(18 * var(--u)), 20px);
+  white-space: nowrap;
+  transform: translateX(-50%);
+  transition: opacity 0.6s ease;
+}
+#hint.gone { opacity: 0; }
+#hint kbd,
+#btn-join-round kbd {
+  display: inline-block;
+  min-width: 1.5em;
+  margin: 0 0.08em;
+  padding: 0.05em 0.35em 0.1em;
+  font-family: inherit;
+  font-size: 0.9em;
+  font-weight: 800;
+  line-height: 1.1;
+  text-align: center;
+  color: var(--tk-blue-700);
+  text-shadow: none;
+  background: var(--tk-white);
+  border-radius: 6px;
+  box-shadow: 0 2px 0 var(--tk-blue-800);
+}
+
+#hit-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  opacity: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 75% 70% at 50% 55%, rgba(200, 0, 20, 0) 55%, rgba(200, 0, 20, 0.5) 85%, rgba(150, 0, 15, 0.82) 100%);
+  transition: opacity 0.6s ease-out;
+}
+
+#smash-banner {
+  position: absolute;
+  top: 21%;
+  left: 50%;
+  z-index: 3;
+  width: max-content;
+  max-width: 94vw;
+  font-size: clamp(24px, calc(44 * var(--u)), 58px);
+  transform: translateX(-50%);
+}
+#smash-banner.pop { animation: shout-pop 0.35s cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes shout-pop {
+  from { transform: translateX(-50%) scale(0.5); opacity: 0; }
+  to { transform: translateX(-50%) scale(1); opacity: 1; }
+}
+
+/* ── Death → spectate → continue ─────────────────────────────────────── */
+
+#death-msg {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  z-index: 3;
+  width: min(94vw, 1100px);
+  font-size: clamp(24px, calc(50 * var(--u)), 66px);
+  transform: translateX(-50%);
+  animation: shout-pop 0.3s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+#death-msg p { margin: 0 0 0.08em; overflow-wrap: anywhere; }
+
+#spectate-count {
+  position: absolute;
+  top: 18%;
+  left: 50%;
+  z-index: 3;
+  font-size: clamp(40px, calc(68 * var(--u)), 92px);
+  /* Positioned by main.js above the kart being watched; the anchor is the
+     number's bottom centre. */
+  transform: translate(-50%, -100%);
+}
+#spectate-count.tick { animation: count-pop 0.4s cubic-bezier(0.2, 1.6, 0.4, 1); }
+@keyframes count-pop {
+  from { transform: translate(-50%, -100%) scale(1.8); opacity: 0.2; }
+  to { transform: translate(-50%, -100%) scale(1); opacity: 1; }
+}
+
+#press-any-key {
+  position: absolute;
+  top: 12%;
+  left: 50%;
+  z-index: 3;
+  width: max-content;
+  max-width: 94vw;
+  font-size: clamp(26px, calc(58 * var(--u)), 78px);
+  transform: translateX(-50%);
+  animation: any-key 1.4s ease-in-out infinite;
+}
+@keyframes any-key {
+  0%, 100% { transform: translateX(-50%) scale(1); }
+  50% { transform: translateX(-50%) scale(1.05); }
+}
+
+/* ── Round over → winners ────────────────────────────────────────────── */
+
+#results {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  pointer-events: none;
+}
+#round-over {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  font-size: clamp(48px, calc(124 * var(--u)), 168px);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+  animation: slam 0.45s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+@keyframes slam {
+  from { transform: translate(-50%, -50%) scale(2.2); opacity: 0; }
+  to { transform: translate(-50%, -50%) scale(1); opacity: 1; }
+}
+#winners {
+  position: absolute;
+  top: clamp(56px, calc(92 * var(--u)), 130px);
+  left: 50%;
+  width: min(94vw, 960px);
+  transform: translateX(-50%);
+}
+#results-winner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 0;
+  font: inherit;
+  /* inherit the outline from .hud-shout */
+}
+#results-winner .winners-title {
+  font-size: clamp(30px, calc(64 * var(--u)), 84px);
+  animation: slam-small 0.4s cubic-bezier(0.2, 1.5, 0.4, 1);
+}
+#results-winner .winner-name {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: clamp(32px, calc(70 * var(--u)), 92px);
+  animation: slam-small 0.5s cubic-bezier(0.2, 1.5, 0.4, 1) both;
+}
+#results-winner .winner-name + .winner-name { animation-delay: 0.12s; }
+@keyframes slam-small {
+  from { transform: scale(1.8); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+#results-next {
+  position: absolute;
+  bottom: clamp(18px, calc(40 * var(--u)), 56px);
+  left: 50%;
+  width: max-content;
+  max-width: 94vw;
+  font-size: clamp(24px, calc(50 * var(--u)), 66px);
+  transform: translateX(-50%);
+}
+#results-next strong { font-weight: inherit; font-variant-numeric: tabular-nums; }
+
+#confetti {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+#confetti i {
+  position: absolute;
+  top: 0;
+  width: calc(9px * var(--w, 1));
+  height: calc(17px * var(--w, 1));
+  background: var(--c);
+  border-radius: 2px;
+  animation: confetti-fall var(--dur, 3.5s) linear forwards;
+}
+/* A few curly streamers among the flat squares. */
+#confetti i.curl {
+  width: calc(22px * var(--w, 1));
+  height: calc(22px * var(--w, 1));
+  background: none;
+  border: calc(5px * var(--w, 1)) solid var(--c);
+  border-color: var(--c) transparent transparent transparent;
+  border-radius: 50%;
+}
+@keyframes confetti-fall {
+  from { transform: translate3d(0, var(--y0, -6vh), 0) rotate3d(1, 0.4, 0.2, 0deg); }
+  to { transform: translate3d(var(--dx, 0), 108vh, 0) rotate3d(1, 0.4, 0.2, var(--spin, 720deg)); }
+}
+
+/* ── Intermission: sitting a round out ───────────────────────────────── */
+
+#intermission {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+}
+#intermission .im-card {
+  position: absolute;
+  top: clamp(10px, calc(17 * var(--u)), 24px);
+  left: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: space-evenly;
+  gap: 1em;
+  width: min(94vw, clamp(320px, calc(526 * var(--u)), 640px));
+  min-height: clamp(70px, calc(100 * var(--u)), 120px);
+  padding: 8px 18px;
+  text-shadow: var(--tk-outline);
+  background: rgba(24, 66, 132, 0.9);
+  border: 3px solid #8ccaff;
+  border-radius: 14px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.15), 0 6px 18px rgba(4, 20, 60, 0.3);
+  transform: translateX(-50%);
+}
+#im-arena { font-size: clamp(22px, calc(38 * var(--u)), 46px); font-weight: 800; line-height: 1.05; text-align: center; }
+#im-mode {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  font-size: clamp(16px, calc(26 * var(--u)), 32px);
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--tk-yellow);
+}
+#intermission .im-board {
+  position: absolute;
+  top: clamp(96px, calc(150 * var(--u)), 190px);
+  bottom: clamp(70px, calc(120 * var(--u)), 150px);
+  left: 50%;
+  display: flex;
+  flex-direction: column;
+  width: min(94vw, clamp(300px, calc(600 * var(--u)), 720px));
+  padding: 10px 12px 12px;
+  background: rgba(24, 66, 132, 0.82);
+  border: 3px solid #8ccaff;
+  border-radius: 14px;
+  transform: translateX(-50%);
+}
+#intermission .im-board h3 {
+  margin: 0 0 6px;
+  font-size: clamp(18px, calc(28 * var(--u)), 34px);
+  font-weight: 800;
+  text-align: center;
+  text-shadow: var(--tk-outline);
+}
+#im-list { overflow-y: auto; }
+#im-list li { border-radius: 8px; }
+#btn-join-round {
+  position: absolute;
+  bottom: clamp(16px, calc(36 * var(--u)), 52px);
+  left: 50%;
+  padding: 0.1em 0.4em;
+  font-size: clamp(26px, calc(54 * var(--u)), 70px);
+  white-space: nowrap;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  transform: translateX(-50%);
+  animation: any-key 1.4s ease-in-out infinite;
+}
+#btn-join-round:focus-visible { outline: 3px solid var(--tk-yellow); outline-offset: 4px; border-radius: 12px; }
+
+/* ── What each match state shows ─────────────────────────────────────── */
+
+/* Health, clock and slot belong to driving; the round screens and dying
+   take them away (the board stays, opened up, so you can see the score). */
+#hud:not([data-phase="playing"]) #top-center,
+#hud:not([data-phase="playing"]) #match-info,
+#hud:not([data-phase="playing"]) #weapon,
+#hud:not([data-phase="playing"]) #hint,
+#hud:not([data-life="alive"]) #weapon,
+#hud:not([data-life="alive"]) #hint,
+/* Sitting out has its own card and board. */
+#hud[data-life="out"] #top-center,
+#hud[data-life="out"] #match-info,
+#hud[data-life="out"][data-phase="playing"] #rank-pill,
+#hud[data-life="out"][data-phase="playing"] #leaderboard,
+#hud[data-life="out"][data-phase="playing"] #net-stats {
+  display: none;
+}
+
+/* ── In-match modals (outside #hud) ──────────────────────────────────── */
+
+#settings .tk-modal__card,
+#share .tk-modal__card { width: min(560px, 100%); }
+.modal-sub {
+  margin-bottom: 16px;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-shadow: var(--tk-outline);
+}
+.modal-sub b { color: var(--tk-yellow); font-weight: 800; }
+.settings-rows {
+  display: grid;
+  gap: 8px;
+  text-align: left;
+}
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 52px;
+  padding: 2px 6px 2px 10px;
+  font-size: clamp(1.1rem, 2.4vw, 1.4rem);
+  font-weight: 800;
+  text-shadow: var(--tk-outline);
+  cursor: pointer;
+  border-radius: var(--tk-radius-sm);
+}
+@media (hover: hover) {
+  label.settings-row:hover { background: rgba(255, 255, 255, 0.1); }
+}
+.settings-info { cursor: default; }
+.settings-info strong { font-weight: 800; }
+.modal-actions {
+  display: flex;
+  gap: 14px;
+  justify-content: center;
+  margin-top: 20px;
+}
+.modal-actions .tk-btn { flex: 1; max-width: 240px; min-height: 60px; font-size: 1.55rem; }
+.share-code {
+  margin: 6px 0 4px;
+  font-size: 1.3rem;
+  font-weight: 800;
+  text-shadow: var(--tk-outline);
+}
+#invite-code {
+  display: inline-block;
+  margin-left: 0.3em;
+  padding: 0.1em 0.6em 0.15em;
+  font-size: 1.7rem;
+  letter-spacing: 0.18em;
+  color: var(--tk-blue-600);
+  text-shadow: none;
+  background: var(--tk-white);
+  border-radius: 10px;
+  box-shadow: inset 0 -3px 0 rgba(11, 42, 107, 0.12), 0 3px 0 rgba(11, 42, 107, 0.35);
+}
+.share-bots { margin-top: 16px; font-weight: 700; text-shadow: var(--tk-outline); }
+
+/* The toast is shared with the menus; in the toy style, and below the top
+   bar so it can never land on the clock or the health bar. Narrow enough to
+   clear the leaderboard on either side. */
+#toast {
+  top: calc(var(--hud-edge) + var(--hud-icon) + 22px);
+  max-width: min(90vw, 620px, calc(100vw - 2 * (var(--hud-edge) + var(--hud-board-w) + 16px)));
+  padding: 8px 20px 10px;
+  font-family: var(--tk-font);
+  font-size: clamp(1rem, 1.6vw, 1.25rem);
+  font-weight: 800;
+  text-shadow: var(--tk-outline);
+  background: linear-gradient(180deg, var(--tk-blue-500), var(--tk-blue-600));
+  border: 3px solid var(--tk-border);
+  border-radius: 999px;
+  box-shadow: inset 0 2px 0 rgba(255, 255, 255, 0.3), 0 3px 0 rgba(11, 42, 107, 0.45);
+}
+
+/* ── Narrow screens ──────────────────────────────────────────────────── */
+
+@media (max-width: 760px) {
+  :root { --hud-board-w: clamp(150px, 44vw, 220px); }
+  /* Three groups do not fit across a phone: health and clock drop to the
+     bottom-left corner, opposite the weapon slot. */
+  #top-center {
+    top: auto;
+    bottom: var(--hud-edge);
+    left: var(--hud-edge);
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+    height: auto;
+    transform: none;
+  }
+  #health, #match-timer { height: var(--hud-icon); }
+  #match-info { top: auto; bottom: calc(var(--hud-edge) + 2 * var(--hud-icon) + 24px); left: var(--hud-edge); transform: none; }
+  #hint { display: none; }
+  #toast { top: 40%; max-width: 90vw; border-radius: 18px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  #weapon-icon.spinning, #weapon-icon.landed, #spectate-count.tick, #press-any-key,
+  #btn-join-round, #round-over, #death-msg, #smash-banner.pop, #match-timer.urgent #match-clock,
+  #results-winner .winners-title, #results-winner .winner-name, #weapon-count.timed {
+    animation: none;
+  }
+  #health-fill { transition: none; }
+}

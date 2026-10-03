@@ -100,8 +100,12 @@ function angleDiff(a, b) {
 }
 
 /**
- * @param {object}   bot     { id, state, brain, weapon, hp }
- * @param {object[]} rivals  all karts: { id, state, alive, isAi, hp }
+ * Every field beyond `id`, `state` and `brain` is optional: the room passes
+ * its full player records, but tools such as scripts/simcheck.mjs drive
+ * plain objects that have never fired or been shot at.
+ *
+ * @param {object}   bot     { id, state, brain, weapon, hp, timer, firePressed }
+ * @param {object[]} rivals  all karts: { id, state, alive, isAi, hp, invulnTime, invisTime }
  * @param {object}   map
  * @param {object}   inp     input object, mutated in place
  * @param {number}   dt
@@ -163,6 +167,10 @@ export function driveAi(bot, rivals, map, inp, dt, boxes = null, fieldCache = nu
   }
 
   const weapon = bot.weapon ? WEAPONS[bot.weapon] : null;
+  /** A timed weapon (shield, spike balls) is switched on and counting down. */
+  const running = (bot.timer ?? 0) > 0;
+  /** Spike balls are spinning: the kart itself is the weapon, so drive at people. */
+  const spiking = running && weapon?.kind === 'orbit';
 
   // ── Pick prey ──
   if (b.retarget <= 0) {
@@ -175,6 +183,9 @@ export function driveAi(bot, rivals, map, inp, dt, boxes = null, fieldCache = nu
       if (r.id === bot.id || r.alive === false) continue;
       // Can't hunt what you can't see.
       if (r.invisTime > 0) continue;
+      // Nor hurt what has just spawned: chasing a kart inside its bubble
+      // wastes the shot and drags every bot onto whoever respawned last.
+      if ((r.invulnTime ?? 0) > 0.5) continue;
       const dist = Math.hypot(r.state.x - s.x, r.state.z - s.z);
       // Close is good, humans are better, and a better bot would rather
       // finish someone already hurt than start a fresh fight.
@@ -221,7 +232,29 @@ export function driveAi(bot, rivals, map, inp, dt, boxes = null, fieldCache = nu
 
   const hurt = (bot.hp ?? 100) < D.retreatBelowHp;
 
-  if (!weapon && boxes && boxes.length) {
+  // ── Keep clear of spinning spikes ──
+  // A kart ringed with spike balls cannot be fought at close range, so a bot
+  // that notices one in time drops whatever it was doing and gives it a wide
+  // berth until the spikes stop. Without this, bots drove into them so
+  // reliably that spikes scored a third of every kill in a bot match. It can
+  // still shoot at the spiker on the way out; only where it drives changes.
+  let threat = null;
+  if (D.spikeWariness > 0 && !spiking && !((bot.shieldTime ?? 0) > 0)) {
+    let nearest = D.spikeWariness;
+    for (const r of rivals) {
+      if (r.id === bot.id || r.alive === false || !((r.timer ?? 0) > 0)) continue;
+      if (WEAPONS[r.weapon]?.kind !== 'orbit') continue;
+      const d = Math.hypot(r.state.x - s.x, r.state.z - s.z);
+      if (d < nearest) { nearest = d; threat = r; }
+    }
+  }
+  if (threat) {
+    const away = Math.atan2(s.x - threat.state.x, s.z - threat.state.z);
+    goalX = s.x + Math.sin(away) * 20;
+    goalZ = s.z + Math.cos(away) * 20;
+  }
+
+  if (!threat && !weapon && boxes && boxes.length) {
     // Unarmed: head for the nearest crate. The flow field already accounts for
     // walls, so "nearest" means nearest to drive to, not nearest as the crow
     // flies — which on these maps is often a different crate entirely.
@@ -258,8 +291,10 @@ export function driveAi(bot, rivals, map, inp, dt, boxes = null, fieldCache = nu
     }
   }
 
-  if (!goalIsCrate) {
-    if (targetAlive && !hurt) {
+  if (!threat && !goalIsCrate) {
+    // With spikes out there is nothing to retreat from — getting close is
+    // the whole attack — so being hurt does not send the bot away.
+    if (targetAlive && (!hurt || spiking)) {
       goalX = target.state.x;
       goalZ = target.state.z;
       goalY = target.state.y;
@@ -320,7 +355,9 @@ export function driveAi(bot, rivals, map, inp, dt, boxes = null, fieldCache = nu
   // control — which is why lining up a shot also drives you into the fight.
   let fireYaw = null;
   let aim = null;
-  if (weapon && targetAlive && targetDist < D.fireRange) {
+  // Running from spikes, the only shot worth turning for is one at the
+  // spiker itself; lining up on anyone else would steer back into them.
+  if (weapon && targetAlive && targetDist < D.fireRange && (!threat || target === threat)) {
     aim = aimAt(weapon, bot, target, D.lead);
     if (aim) fireYaw = aim.yaw + b.aimJitter;
   }
@@ -360,8 +397,9 @@ export function driveAi(bot, rivals, map, inp, dt, boxes = null, fieldCache = nu
 
   // ── Shoot ──
   inp.fire = false;
-  if (weapon && b.react <= 0) {
-    if (weapon.kind === 'self') {
+  if (weapon && b.react <= 0 && !running) {
+    let want = false;
+    if (weapon.kind === 'self' || weapon.kind === 'timed') {
       // Buffs are worth holding for the moment they matter: a shield or a
       // repair when hurt, a boost when there is ground to cover.
       const useful = weapon.id === 'repair'
@@ -369,18 +407,33 @@ export function driveAi(bot, rivals, map, inp, dt, boxes = null, fieldCache = nu
         : weapon.id === 'shield'
           ? targetAlive && targetDist < 22
           : targetDist > 18 || goalIsCrate;
-      inp.fire = useful && Math.random() < D.buffDiscipline;
+      // Discipline is a chance per second, and this runs every step, so take
+      // this step's share of it. Rolled per step at face value, even an easy
+      // bot used a buff within a few frames and the tiers were identical.
+      want = useful && Math.random() < 1 - Math.pow(1 - D.buffDiscipline, dt);
+    } else if (weapon.kind === 'orbit') {
+      // Spikes only reach a few metres, so switch them on with prey close by
+      // and then go and ram it (see the goal choice above).
+      want = targetAlive && targetDist < 10;
     } else if (weapon.kind === 'mine') {
-      // Dropped behind, so it only pays off with someone on your tail.
-      inp.fire = targetAlive && targetDist < 14 && Math.abs(s.speed) > 8;
+      // Dropped behind, so it only pays off with someone close on your tail.
+      if (targetAlive && targetDist < 14 && targetDist > 1e-3) {
+        const ahead = ((target.state.x - s.x) * Math.sin(s.yaw)
+          + (target.state.z - s.z) * Math.cos(s.yaw)) / targetDist;
+        want = ahead < -0.3;
+      }
     } else if (aim && absErr < D.fireCone) {
-      const clear = !D.checkLineOfFire || hasLineOfFire(
+      want = !D.checkLineOfFire || hasLineOfFire(
         map.solids,
         s.x, s.y + 0.75, s.z,
         target.state.x, target.state.y + 0.75, target.state.z,
       );
-      inp.fire = clear;
     }
+    // A held weapon (the machine gun) fires for as long as the button is
+    // down. Everything else fires on the press, so to use a second charge —
+    // a mine's next drop — the bot has to let go for a step first, exactly as
+    // a player has to lift their finger.
+    inp.fire = weapon.hold ? want : want && !(bot.firePressed ?? false);
   }
 
   return inp;

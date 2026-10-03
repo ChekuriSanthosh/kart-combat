@@ -9,13 +9,16 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "check": "node scripts/simcheck.mjs && node scripts/wallcheck.mjs",
+    "check": "node scripts/simcheck.mjs && node scripts/wallcheck.mjs && node scripts/roomcheck.mjs",
     "playtest": "./scripts/with-server.sh node scripts/playtest.mjs",
     "party": "./scripts/with-server.sh node scripts/partytest.mjs",
     "smooth": "./scripts/with-server.sh node scripts/smoothcheck.mjs",
-    "test": "node scripts/simcheck.mjs && node scripts/wallcheck.mjs",
+    "test": "node scripts/simcheck.mjs && node scripts/wallcheck.mjs && node scripts/roomcheck.mjs",
     "lobby": "./scripts/with-server.sh node scripts/lobbytest.mjs",
-    "garage": "./scripts/with-server.sh node scripts/garagetest.mjs"
+    "garage": "./scripts/with-server.sh node scripts/garagetest.mjs",
+    "hud": "./scripts/with-server.sh node scripts/hudtest.mjs",
+    "thumbs": "./scripts/with-server.sh node scripts/thumbs.mjs",
+    "weapons": "./scripts/with-server.sh node scripts/weapontest.mjs"
   },
   "dependencies": {
     "express": "^4.21.2",

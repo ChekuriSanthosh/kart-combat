@@ -11,7 +11,8 @@ import { chromium } from 'playwright';
 import { mkdirSync } from 'fs';
 import { join } from 'path';
 
-const BASE = process.argv[2] || 'http://localhost:3100';
+// PORT matches with-server.sh, so `PORT=3300 npm run X` tests the server it just started.
+const BASE = process.argv[2] || `http://localhost:${process.env.PORT || 3100}`;
 const MAPS = process.argv.slice(3).length ? process.argv.slice(3) : ['gravelPit', 'skyPinball', 'beybladeArena', 'harvestHollow'];
 const OUT = join(process.cwd(), '.playtest');
 mkdirSync(OUT, { recursive: true });
@@ -33,6 +34,8 @@ for (const mapId of MAPS) {
   await page.goto(BASE, { waitUntil: 'networkidle' });
   await page.screenshot({ path: join(OUT, 'lobby.png') });
 
+  // Arenas are picked in the modal behind the ▲ beside PLAY, as a player would.
+  await page.click('#btn-arena');
   await page.click(`.map-card[data-map="${mapId}"]`);
   await page.fill('#player-name', 'TestPilot');
   await page.click('#btn-play');

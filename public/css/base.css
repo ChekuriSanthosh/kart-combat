@@ -1,0 +1,520 @@
+/* Kart Combat — shared foundation: the font, design tokens, reset, and the
+   toy-box component kit that menu.css and hud.css build on.
+
+   Load order is base → menu → hud. Only things that every screen needs live
+   here, plus the two elements that sit outside both #lobby and #hud
+   (#btn-fullscreen, #toast). */
+
+/* Baloo 2 (SIL OFL, see /fonts/OFL-Baloo2.txt), self-hosted so every player
+   gets the rounded face rather than only machines that happen to have it
+   installed. One variable file covers every weight from 400 to 800; heavier
+   requests (900) resolve to 800 instead of a synthesised bold. */
+@font-face {
+  font-family: 'Baloo 2';
+  font-style: normal;
+  font-weight: 400 800;
+  font-display: swap;
+  src: url('/fonts/Baloo2-latin-wght.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA,
+    U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193,
+    U+2212, U+2215, U+FEFF, U+FFFD;
+}
+
+:root {
+  --ink: #16202e;
+  --panel: rgba(10, 16, 26, 0.72);
+  --panel-line: rgba(255, 255, 255, 0.14);
+  --text: #f4f7fb;
+  --muted: #a8b6cc;
+  --accent: #4fd1c5;
+  --play: #ff8a1f;
+  --play-deep: #d9600a;
+  --play-shadow: #a8430b;
+
+  /* Toy-box design tokens (the tk- kit below). Saturated mid blues with a
+     light rim, white bold text with a dark-blue outline: chunky enough to
+     read at a glance over a busy arena. */
+  --tk-font: 'Baloo 2', 'Fredoka', system-ui, sans-serif;
+  --tk-blue-900: #0b2a6b;
+  --tk-blue-800: #123f9a;
+  --tk-blue-700: #1655c9;
+  --tk-blue-600: #1f6fe0;
+  --tk-blue-500: #2a7de1;
+  --tk-blue-400: #4a98f0;
+  --tk-blue-300: #7fbaff;
+  --tk-blue-200: #b3dbff;
+  --tk-panel: rgba(31, 111, 224, 0.82);
+  --tk-panel-soft: rgba(42, 125, 225, 0.55);
+  --tk-border: #9ccfff;
+  --tk-ink: #0d2257;
+  --tk-white: #ffffff;
+  --tk-yellow: #ffd23f;
+  --tk-orange: #ff9a1f;
+  --tk-orange-700: #d9630b;
+  --tk-cyan: #3ee7ff;
+  --tk-green: #45d65a;
+  --tk-red: #ff4a4a;
+  --tk-radius: 16px;
+  --tk-radius-sm: 10px;
+  /* text-shadow for white text over the scene or a panel. */
+  --tk-outline: 0 2px 0 var(--tk-ink), 0 0 3px var(--tk-ink);
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #0b0f17;
+  color: var(--text);
+  font-family: "Baloo 2", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}
+
+#game { display: block; width: 100vw; height: 100vh; outline: none; }
+.hidden { display: none !important; }
+
+/* Kept in the DOM and the accessibility tree (and readable by the tests) but
+   not drawn. !important because it is usually layered over an id rule. */
+.visually-hidden {
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  margin: -1px !important;
+  padding: 0 !important;
+  border: 0 !important;
+  overflow: hidden !important;
+  clip: rect(0 0 0 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+}
+
+/* Both sit outside the lobby and the HUD, so they are positioned against the
+   viewport and stacked above everything — the toast has to be readable over
+   the lobby and mid-match alike. */
+#btn-fullscreen {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
+  z-index: 30;
+  width: 46px;
+  height: 46px;
+  border-radius: 14px;
+  border: 2px solid rgba(255,255,255,0.75);
+  background: rgba(15, 23, 42, 0.5);
+  color: #fff;
+  font-size: 1.2rem;
+  cursor: pointer;
+}
+
+#toast {
+  position: fixed;
+  left: 50%;
+  top: 6%;
+  transform: translateX(-50%);
+  z-index: 40;
+  max-width: min(90vw, 620px);
+  overflow-wrap: anywhere;
+  text-align: center;
+  padding: 10px 18px;
+  border-radius: 12px;
+  background: rgba(15, 23, 42, 0.92);
+  color: #fff;
+  font-weight: 700;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+#toast.show { opacity: 1; }
+
+/* ── Toy-box component kit ───────────────────────────────────────────
+   Opt-in classes only: nothing here matches an element unless it carries a
+   tk- class, so adopting the kit is a screen-by-screen change. Colours come
+   from the tokens above; per-variant colours are local custom properties so
+   a variant only has to say which colours it uses, not repeat the recipe. */
+
+/* White bold text with the dark outline, for anything drawn over the scene. */
+.tk-outline {
+  color: var(--tk-white);
+  text-shadow: var(--tk-outline);
+}
+
+/* Chunky 3D buttons. The solid darker edge under the face is what makes them
+   read as physical buttons; pressing sinks the face onto that edge. */
+.tk-btn,
+.tk-icon-btn,
+.tk-modal__close {
+  --tk-btn-top: var(--tk-blue-400);
+  --tk-btn-bottom: var(--tk-blue-600);
+  --tk-btn-edge: var(--tk-blue-800);
+  --tk-btn-rim: var(--tk-border);
+  --tk-btn-depth: 4px;
+  position: relative;
+  font-family: var(--tk-font);
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--tk-white);
+  text-shadow: var(--tk-outline);
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-tap-highlight-color: transparent;
+  border: 3px solid var(--tk-btn-rim);
+  /* A glossy band over the top half, then the fill gradient. */
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.26) 0 46%, rgba(255, 255, 255, 0) 54%),
+    linear-gradient(180deg, var(--tk-btn-top), var(--tk-btn-bottom));
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.1),
+    0 var(--tk-btn-depth) 0 var(--tk-btn-edge),
+    0 calc(var(--tk-btn-depth) + 4px) 10px rgba(4, 20, 60, 0.28);
+  transition: transform 0.08s ease-out, box-shadow 0.08s ease-out, filter 0.12s ease;
+}
+.tk-btn:active:not(:disabled),
+.tk-icon-btn:active:not(:disabled),
+.tk-modal__close:active:not(:disabled) {
+  transform: translateY(3px);
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.4),
+    inset 0 -3px 0 rgba(0, 0, 0, 0.1),
+    0 calc(var(--tk-btn-depth) - 3px) 0 var(--tk-btn-edge),
+    0 calc(var(--tk-btn-depth) - 1px) 4px rgba(4, 20, 60, 0.28);
+}
+/* Hover only where there is a real pointer, so taps do not leave buttons
+   stuck in their hover look. */
+@media (hover: hover) {
+  .tk-btn:hover:not(:disabled),
+  .tk-icon-btn:hover:not(:disabled),
+  .tk-modal__close:hover:not(:disabled) {
+    filter: brightness(1.08) saturate(1.06);
+  }
+}
+.tk-btn:focus-visible,
+.tk-icon-btn:focus-visible,
+.tk-modal__close:focus-visible {
+  outline: 3px solid var(--tk-yellow);
+  outline-offset: 3px;
+}
+.tk-btn:disabled,
+.tk-icon-btn:disabled,
+.tk-modal__close:disabled {
+  cursor: not-allowed;
+  filter: grayscale(0.6) brightness(0.92);
+  opacity: 0.75;
+}
+
+.tk-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45em;
+  min-height: 44px;
+  padding: 0.45em 1.35em 0.5em;
+  font-size: 1.2rem;
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+  border-radius: var(--tk-radius);
+}
+/* The one call to action: big, warm and impossible to miss. */
+.tk-btn--play {
+  --tk-btn-top: var(--tk-yellow);
+  --tk-btn-bottom: var(--tk-orange);
+  --tk-btn-edge: var(--tk-orange-700);
+  --tk-btn-rim: #fff3c4;
+  --tk-btn-depth: 6px;
+  min-height: 72px;
+  padding: 0.2em 1.1em 0.25em;
+  font-size: clamp(2rem, 4.4vw, 3.1rem);
+  letter-spacing: 0.04em;
+  border-radius: 20px;
+}
+/* Yellow would vanish against the yellow face. */
+.tk-btn--play:focus-visible { outline-color: var(--tk-cyan); }
+.tk-btn--blue {
+  --tk-btn-top: var(--tk-blue-400);
+  --tk-btn-bottom: var(--tk-blue-600);
+  --tk-btn-edge: var(--tk-blue-800);
+}
+.tk-btn--orange {
+  --tk-btn-top: #ffb547;
+  --tk-btn-bottom: var(--tk-orange);
+  --tk-btn-edge: var(--tk-orange-700);
+  --tk-btn-rim: #ffd9a3;
+}
+.tk-btn--orange:focus-visible { outline-color: var(--tk-cyan); }
+/* Secondary action: same shape, see-through face. */
+.tk-btn--ghost {
+  --tk-btn-edge: rgba(11, 42, 107, 0.55);
+  background: var(--tk-panel-soft);
+}
+
+/* Square icon button (settings, fullscreen, leaderboard…). The icon is a
+   glyph or an inline SVG drawn in currentColor. */
+.tk-icon-btn {
+  display: inline-grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+  border-radius: 14px;
+}
+.tk-icon-btn svg {
+  width: 58%;
+  height: 58%;
+  filter: drop-shadow(0 2px 0 var(--tk-ink));
+}
+
+/* Blue panel: the container for menus, cards and HUD boards. */
+.tk-panel,
+.tk-modal__card {
+  color: var(--tk-white);
+  font-family: var(--tk-font);
+  background: var(--tk-panel);
+  border: 3px solid var(--tk-border);
+  border-radius: var(--tk-radius);
+  box-shadow:
+    inset 0 3px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -3px 0 rgba(11, 42, 107, 0.2),
+    0 8px 22px rgba(4, 20, 60, 0.28);
+}
+.tk-panel { padding: 14px 16px; }
+
+/* Rounded-full pill for compact HUD readouts (rank, timer, health). */
+.tk-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5em;
+  min-height: 40px;
+  padding: 2px 16px;
+  font-family: var(--tk-font);
+  font-weight: 800;
+  line-height: 1;
+  color: var(--tk-white);
+  text-shadow: var(--tk-outline);
+  border: 3px solid var(--tk-border);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--tk-blue-500), var(--tk-blue-600));
+  box-shadow:
+    inset 0 2px 0 rgba(255, 255, 255, 0.3),
+    0 3px 0 rgba(11, 42, 107, 0.45);
+}
+
+/* Modal: a dimmed full-screen layer holding one card. The layer scrolls and
+   the card centres with auto margins, so a card taller than the screen can
+   still be scrolled to both ends instead of being clipped. Above the
+   fullscreen button, below the toast. */
+.tk-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 35;
+  display: flex;
+  overflow-y: auto;
+  padding: 32px 16px;
+  background: rgba(8, 26, 72, 0.55);
+}
+.tk-modal__card {
+  position: relative;
+  width: min(640px, 100%);
+  margin: auto;
+  padding: 22px 26px 26px;
+  text-align: center;
+  animation: tk-pop 0.2s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+.tk-modal__card > h2 {
+  margin-bottom: 0.4em;
+  font-size: clamp(1.8rem, 4vw, 2.6rem);
+  font-weight: 800;
+  line-height: 1.05;
+  color: var(--tk-white);
+  text-shadow: 0 3px 0 var(--tk-ink), 0 0 4px var(--tk-ink);
+}
+/* Round close button sitting on the card's top-right corner. Expects a
+   glyph such as ✕ and an aria-label. Turns red under the pointer so it
+   reads as "close", not "another option". */
+.tk-modal__close {
+  position: absolute;
+  top: -18px;
+  right: -18px;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  padding: 0;
+  font-size: 1.6rem;
+  line-height: 1;
+  border-radius: 50%;
+}
+@media (hover: hover) {
+  .tk-modal__close:hover:not(:disabled) {
+    --tk-btn-top: #ff7a6b;
+    --tk-btn-bottom: var(--tk-red);
+    --tk-btn-edge: #b3202a;
+    --tk-btn-rim: #ffc2bb;
+  }
+}
+@keyframes tk-pop {
+  from { transform: scale(0.92); opacity: 0; }
+  to { transform: scale(1); opacity: 1; }
+}
+
+/* Small round count badge (ammo, seconds left, unread). */
+.tk-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 1.9em;
+  height: 1.9em;
+  padding: 0 0.45em;
+  font-family: var(--tk-font);
+  font-size: 0.95rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--tk-white);
+  text-shadow: var(--tk-outline);
+  border: 2px solid var(--tk-white);
+  border-radius: 999px;
+  background: linear-gradient(180deg, var(--tk-blue-500), var(--tk-blue-700));
+  box-shadow: 0 2px 0 var(--tk-blue-900);
+}
+
+/* Hexagon badge (score / level style). clip-path cannot draw a border, so
+   the element is the rim and ::before is the fill, inset by the rim width. */
+.tk-hex {
+  --tk-hex-fill: var(--tk-blue-600);
+  --tk-hex-rim: var(--tk-border);
+  position: relative;
+  isolation: isolate;
+  display: inline-grid;
+  place-items: center;
+  width: 2.2em;
+  height: 2.5em;
+  font-family: var(--tk-font);
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--tk-white);
+  text-shadow: var(--tk-outline);
+  background: var(--tk-hex-rim);
+  clip-path: polygon(50% 0, 100% 25%, 100% 75%, 50% 100%, 0 75%, 0 25%);
+}
+.tk-hex::before {
+  content: '';
+  position: absolute;
+  inset: 3px;
+  z-index: -1;
+  background: linear-gradient(180deg, var(--tk-blue-400), var(--tk-hex-fill));
+  clip-path: inherit;
+}
+
+/* ◀ value ▶ selector row: <div class="tk-stepper"><button aria-label="…">
+   </button><span>value</span><button aria-label="…"></button></div>. The
+   arrows are drawn in CSS so they look the same on every platform; any text
+   in the buttons stays for screen readers but is not drawn. */
+.tk-stepper {
+  display: inline-grid;
+  grid-template-columns: 44px minmax(6em, 1fr) 44px;
+  align-items: center;
+  min-height: 48px;
+  padding: 2px;
+  font-family: var(--tk-font);
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1.1;
+  color: var(--tk-blue-500);
+  border: 3px solid var(--tk-border);
+  border-radius: var(--tk-radius-sm);
+  background: var(--tk-white);
+  box-shadow:
+    inset 0 -3px 0 rgba(11, 42, 107, 0.1),
+    0 3px 0 rgba(11, 42, 107, 0.35);
+}
+.tk-stepper > :not(button) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+.tk-stepper > button {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  min-height: 40px;
+  padding: 0;
+  font-size: 0;
+  color: var(--tk-blue-500);
+  cursor: pointer;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  transition: transform 0.08s ease-out, background-color 0.12s ease;
+}
+.tk-stepper > button::before {
+  content: '';
+  width: 16px;
+  height: 20px;
+  background: currentColor;
+  clip-path: polygon(100% 0, 100% 100%, 0 50%);
+}
+.tk-stepper > button:last-child::before { clip-path: polygon(0 0, 100% 50%, 0 100%); }
+@media (hover: hover) {
+  .tk-stepper > button:hover:not(:disabled) { background: rgba(127, 186, 255, 0.28); }
+}
+.tk-stepper > button:active:not(:disabled) { transform: scale(0.88); }
+.tk-stepper > button:focus-visible { outline: 3px solid var(--tk-yellow); outline-offset: 1px; }
+.tk-stepper > button:disabled { opacity: 0.3; cursor: default; }
+
+/* Big rounded checkbox: <input type="checkbox" class="tk-check">. */
+.tk-check {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 44px;
+  margin: 0;
+  cursor: pointer;
+  border: 3px solid var(--tk-border);
+  border-radius: var(--tk-radius-sm);
+  background: var(--tk-white);
+  box-shadow:
+    inset 0 -3px 0 rgba(11, 42, 107, 0.1),
+    0 3px 0 rgba(11, 42, 107, 0.35);
+}
+.tk-check::before {
+  content: '';
+  width: 62%;
+  height: 62%;
+  background: var(--tk-blue-500);
+  clip-path: polygon(0 55%, 14% 41%, 38% 64%, 86% 12%, 100% 26%, 38% 92%);
+  transform: scale(0);
+  transition: transform 0.14s cubic-bezier(0.2, 1.6, 0.4, 1);
+}
+.tk-check:checked::before { transform: scale(1); }
+.tk-check:focus-visible { outline: 3px solid var(--tk-yellow); outline-offset: 3px; }
+.tk-check:disabled { cursor: not-allowed; opacity: 0.55; }
+
+/* Menu backdrop: two close blues in 96 px squares under a soft vignette. */
+.tk-checker {
+  background:
+    radial-gradient(ellipse 85% 80% at 50% 45%, rgba(11, 42, 107, 0) 55%, rgba(11, 42, 107, 0.38) 100%),
+    repeating-conic-gradient(#5a8fd8 0 25%, #4a7ec9 0 50%) center / 192px 192px;
+  background-color: #4a7ec9;
+}
+
+/* Keep every state change, drop the movement. */
+@media (prefers-reduced-motion: reduce) {
+  .tk-btn,
+  .tk-icon-btn,
+  .tk-modal__close,
+  .tk-stepper > button,
+  .tk-check::before {
+    transition: none;
+  }
+  .tk-modal__card { animation: none; }
+  .tk-stepper > button:active:not(:disabled) { transform: none; }
+}

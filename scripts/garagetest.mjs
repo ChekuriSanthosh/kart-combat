@@ -7,7 +7,8 @@
  */
 import { chromium } from 'playwright';
 
-const BASE = process.argv[2] || 'http://localhost:3100';
+// PORT matches with-server.sh, so `PORT=3300 npm run X` tests the server it just started.
+const BASE = process.argv[2] || `http://localhost:${process.env.PORT || 3100}`;
 let failures = 0;
 const ok = (m) => console.log(`  ok    ${m}`);
 const fail = (m) => { failures++; console.log(`  FAIL  ${m}`); };
@@ -30,14 +31,19 @@ try {
   await page.click('#btn-customize');
   await page.waitForTimeout(400);
   const drivers = await page.$$eval('#cz-options button', (n) => n.length);
-  if (drivers === 6) ok(`customize offers ${drivers} drivers`);
-  else fail(`expected 6 drivers, found ${drivers}`);
+  // The roster lives in shared/cosmetics.js; the screen must offer all of it.
+  const roster = await page.evaluate(async () => {
+    const { CHARACTERS, KARTS, DEFAULT_CHARACTER } = await import('/shared/cosmetics.js');
+    return { drivers: Object.keys(CHARACTERS).length, karts: Object.keys(KARTS).length, def: DEFAULT_CHARACTER };
+  });
+  if (drivers === roster.drivers) ok(`customize offers all ${drivers} drivers`);
+  else fail(`expected ${roster.drivers} drivers, found ${drivers}`);
 
   await page.click('.cz-tab[data-tab="kart"]');
   await page.waitForTimeout(300);
   const karts = await page.$$eval('#cz-options button', (n) => n.length);
-  if (karts === 6) ok(`customize offers ${karts} chassis`);
-  else fail(`expected 6 chassis, found ${karts}`);
+  if (karts === roster.karts) ok(`customize offers all ${karts} chassis`);
+  else fail(`expected ${roster.karts} chassis, found ${karts}`);
 
   // The preview must actually be drawing, not a blank canvas.
   const drew = await page.evaluate(() => {
@@ -125,18 +131,21 @@ try {
   // legitimately stand the same height and differ in length and track width.
   // Compare the whole bounding box instead.
   const shapes = built
-    .filter((b) => !b.error && b.c === 'rooster')
+    .filter((b) => !b.error && b.c === roster.def)
     .map((b) => [b.k, `${b.w}x${b.h}x${b.d}`]);
   const distinct = new Set(shapes.map(([, sig]) => sig)).size;
   console.log('    chassis w x h x d: ' + shapes.map(([k, sig]) => `${k} ${sig}`).join('  '));
-  if (distinct === shapes.length) ok(`all ${distinct} chassis have distinct silhouettes`);
+  // Every chassis must actually have been measured, or this passes on nothing.
+  if (shapes.length !== roster.karts) fail(`measured ${shapes.length} of ${roster.karts} chassis`);
+  else if (distinct === shapes.length) ok(`all ${distinct} chassis have distinct silhouettes`);
   else fail(`only ${distinct} distinct silhouettes across ${shapes.length} chassis`);
 
   // ── Live swap reaches other players ──
   await page.click('#btn-play');
   await page.waitForSelector('#hud:not(.hidden)');
   await page.waitForTimeout(800);
-  await page.click('.map-card[data-map="gravelPit"]').catch(() => {});
+  await page.click('#btn-arena', { timeout: 3000 }).catch(() => {});
+  await page.click('.map-card[data-map="gravelPit"]', { timeout: 3000 }).catch(() => {});
   const swapped = await page.evaluate(async () => {
     const before = window.__kc.scene.children.length;
     window.__kc.socket.emit('player:customize', { character: 'knight', kart: 'monster' });

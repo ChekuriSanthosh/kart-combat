@@ -8,7 +8,12 @@
  *
  * Solid shapes — `y` is always the BOTTOM of the shape:
  *   { t:'box',  x, y, z, w, h, d, rotY }   axis box, optionally yaw-rotated
- *   { t:'cyl',  x, y, z, r, h, inner? }    upright cylinder; `inner` makes it a tube
+ *   { t:'cyl',  x, y, z, r, h, inner?, rise? }
+ *        upright cylinder; `inner` makes it a tube. A tube with `rise` is a
+ *        sloped band of a bowl: its top climbs from `y + h - rise` at the inner
+ *        edge to `y + h` at the outer edge, so bands laid edge to edge make one
+ *        continuous slope instead of a staircase. A slope is something you
+ *        drive on, never a wall.
  *   { t:'ramp', x, y, z, w, len, rise, rotY }
  *        flat at `y` on the local -Z edge, rising to `y + rise` on the local +Z edge
  *   { t:'ring', x, y, z, r, h }            hollow wall that keeps karts INSIDE radius r
@@ -81,6 +86,10 @@ export function topAt(s, x, z) {
     const d2 = dx * dx + dz * dz;
     if (d2 > s.r * s.r) return null;
     if (s.inner && d2 < s.inner * s.inner) return null;
+    if (s.inner && s.rise) {
+      const t = (Math.sqrt(d2) - s.inner) / (s.r - s.inner);
+      return s.y + s.h - s.rise * (1 - t);
+    }
     return s.y + s.h;
   }
   if (s.t === 'ramp') {
@@ -183,6 +192,10 @@ export function resolveHorizontal(solids, out, radius, feetY, headY, fromX, from
 
   const wall = (s) => {
     if (s.t === 'ring') return !(s.y >= headY || s.y + s.h <= feetY);
+    // Slope bands meet edge to edge at the same height, so there is no lip
+    // anywhere to bump into; judging one by its highest (outer) edge would
+    // wall off the bottom of every bowl.
+    if (s.rise) return false;
     return s._top > climbable && s.y < headY;
   };
 
@@ -385,7 +398,10 @@ export function pointInSolid(solids, x, y, z) {
     if (s.t === 'ring' || s.passThrough) continue;
     if (y < s.y || y > s._top) continue;
     const top = topAt(s, x, z);
-    if (top !== null) return s;
+    if (top === null) continue;
+    // A slope is only solid below its surface, not up to its highest edge.
+    if (s.rise && y > top) continue;
+    return s;
   }
   return null;
 }

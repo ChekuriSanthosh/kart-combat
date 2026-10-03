@@ -1,25 +1,33 @@
 /**
- * Beyblade Arena — a spinning stadium dish.
+ * Beyblade Arena — a spinning stadium dish under a daylight sky.
  *
- * The bowl is built from concentric terraces whose steps are shorter than the
- * kart's step height, so karts drive smoothly up and down a surface that is
- * exactly what the player sees. The dish spins, dragging karts around it and
- * flinging them toward the rim.
+ * The bowl is one smooth slope: a flat centre pit, then concentric bands whose
+ * tops ramp from one band's height to the next, so their edges meet exactly and
+ * a kart rolls up and down it like the real thing. It used to be eighteen flat
+ * terraces 0.42 m apart, and a kart sampling the ground under its centre would
+ * sink its nose into each step until it crossed it, then pop up a step in a
+ * single frame — the "digging into the arena" this replaced.
+ *
+ * The profile steepens towards the rim (height ∝ distance^1.5), flat enough in
+ * the middle to fight in and steep enough at the edge to feel like a bowl. The
+ * dish spins, dragging karts around it and flinging them toward the rim.
  */
 
 import { cyl, ring, decor, spawnRing, circlePoints } from './helpers.js';
 
-const CENTER_R = 8;
-const TERRACES = 18;
-const TERRACE_W = 2;
-const STEP = 0.42;
-const OUTER_R = CENTER_R + TERRACES * TERRACE_W; // 44
-const RIM_TOP = (TERRACES - 1) * STEP; // 7.14
+const CENTER_R = 10;
+const BOWL_W = 46;
+const OUTER_R = CENTER_R + BOWL_W; // 56
+const RIM_TOP = 8;
+/** One metre per band: fine enough that the straight segments read as a curve. */
+const BAND_W = 1;
+const BANDS = BOWL_W / BAND_W;
 
-export function terraceHeight(radius) {
+/** Height of the dish surface at a distance from the centre. */
+export function dishHeight(radius) {
   if (radius <= CENTER_R) return 0;
-  const k = Math.min(TERRACES - 1, Math.floor((radius - CENTER_R) / TERRACE_W));
-  return k * STEP;
+  const t = Math.min(1, (radius - CENTER_R) / BOWL_W);
+  return RIM_TOP * t ** 1.5;
 }
 
 export default function beybladeArena() {
@@ -30,13 +38,17 @@ export default function beybladeArena() {
   // Flat centre pit.
   solids.push(cyl(0, -1.5, 0, CENTER_R, 1.5, 'dishCore', { spins: true }));
 
-  // Terraced bowl. Each ring is a tube so its top only covers its own band.
-  for (let k = 0; k < TERRACES; k++) {
-    const inner = CENTER_R + k * TERRACE_W;
-    const outer = inner + TERRACE_W;
-    const top = k * STEP;
-    solids.push(cyl(0, -1.5, 0, outer, top + 1.5, k % 2 ? 'dishB' : 'dishA', {
+  // The bowl: one sloped band per metre, each a tube whose top climbs from the
+  // previous band's outer height to its own, so the surface is continuous.
+  // Colours alternate every two metres, which reads as rings on the spinner.
+  for (let k = 0; k < BANDS; k++) {
+    const inner = CENTER_R + k * BAND_W;
+    const outer = inner + BAND_W;
+    const low = dishHeight(inner);
+    const high = dishHeight(outer);
+    solids.push(cyl(0, -1.5, 0, outer, high + 1.5, Math.floor(k / 2) % 2 ? 'dishB' : 'dishA', {
       inner,
+      rise: high - low,
       spins: true,
     }));
   }
@@ -46,30 +58,37 @@ export default function beybladeArena() {
 
   // Four launcher posts just outside the centre pit: obstacles to juke around.
   // These stay put — a mesh that span while its collider did not would be a lie.
-  for (const p of circlePoints(4, CENTER_R + 3.5, 0, Math.PI / 4)) {
-    solids.push(cyl(p.x, terraceHeight(CENTER_R + 3.5), p.z, 1.5, 2.2, 'post'));
+  // Each stands at the height of the lowest point under it so no gap shows.
+  const POST_R = CENTER_R + 4;
+  for (const p of circlePoints(4, POST_R, 0, Math.PI / 4)) {
+    solids.push(cyl(p.x, dishHeight(POST_R - 1.5), p.z, 1.5, 2.4, 'post'));
   }
 
   // ── Visual dressing ──
-  visuals.push(decor('cage', 0, 0, 0, { r: OUTER_R + 1.4, h: 20 }));
-  visuals.push(decor('dishRim', 0, RIM_TOP, 0, { r: OUTER_R }));
+  // The stadium sits on a lawn, with grandstands all round and floodlights
+  // behind them. Nothing out here can be reached: the rim wall is 9 m tall.
+  visuals.push(decor('ground', 0, -1.6, 0, { size: 380, mat: 'lawn', round: true }));
+  visuals.push(decor('drum', 0, -1.6, 0, { r: OUTER_R + 0.05, h: RIM_TOP + 1.6 }));
+  visuals.push(decor('stands', 0, 0, 0, {
+    r: OUTER_R + 7, rows: 8, step: 1.7, rise: 1.5, base: -1.6, sectors: 16,
+  }));
+  circlePoints(8, OUTER_R + 26, 0, 0.0625).forEach((p) => {
+    visuals.push(decor('floodlight', p.x, -1.6, p.z, { h: 24 }));
+  });
   // The emblem and grooves ride the spinner so the rotation is readable.
   visuals.push(decor('centreEmblem', 0, 0.03, 0, { r: CENTER_R - 0.5, spins: true }));
-  circlePoints(12, OUTER_R + 4.5, 0).forEach((p, i) => {
-    visuals.push(decor('floodlight', p.x, 0, p.z, { h: 22, tint: i % 3 }));
-  });
-  for (const r of [14, 22, 30, 38]) {
-    visuals.push(decor('grooveRing', 0, terraceHeight(r) + 0.05, 0, { r, spins: true }));
+  for (const r of [17, 27, 37, 47]) {
+    visuals.push(decor('grooveRing', 0, dishHeight(r) + 0.05, 0, { r, spins: true }));
   }
 
   // ── Pickups: two sparse rings, so the dish stays a fight over territory ──
-  for (const [r, n, phase] of [[14, 4, 0], [31, 8, 0.125]]) {
+  for (const [r, n, phase] of [[17, 4, 0], [39, 10, 0.1]]) {
     for (const p of circlePoints(n, r, 0, phase)) {
-      boxes.push({ x: p.x, y: terraceHeight(r), z: p.z });
+      boxes.push({ x: p.x, y: dishHeight(r), z: p.z });
     }
   }
 
-  const spawns = spawnRing(15, 26, 0, 0.05).map((s) => ({ ...s, y: terraceHeight(26) }));
+  const spawns = spawnRing(15, 32, 0, 0.05).map((s) => ({ ...s, y: dishHeight(32) }));
 
   return {
     id: 'beybladeArena',
@@ -86,7 +105,9 @@ export default function beybladeArena() {
      * the *same* `omega` the mesh spins at, which is what makes a stationary
      * kart look bolted to the floor rather than sliding on it.
      */
-    spin: { omega: 0.52, centrifugal: 0.22, tangential: 0.1, yawGrip: 1 },
+    // omega was 0.52 on the old 44 m dish; slowed in step with the bigger
+    // radius so the rim still moves at about the same speed (~25 m/s).
+    spin: { omega: 0.45, centrifugal: 0.22, tangential: 0.1, yawGrip: 1 },
     /**
      * Above this the dish no longer has any grip on you — a kart launched over
      * the rim is in the air, not on the ride. Set just above the rim so the
@@ -95,20 +116,39 @@ export default function beybladeArena() {
     spinCeiling: RIM_TOP + 3,
     arenaRadius: OUTER_R,
     theme: {
-      background: 0x0e1420,
-      fog: { color: 0x141d2e, near: 80, far: 230 },
-      hemi: { sky: 0xaaccff, ground: 0x202838, intensity: 0.34 },
-      ambient: { color: 0xdde8ff, intensity: 0.18 },
-      sun: { color: 0xffffff, intensity: 2.6, x: 36, y: 56, z: 40 },
+      sky: { top: 0x4ea8ff, horizon: 0xe2f4ff, bottom: 0xe2f4ff },
+      background: 0xe2f4ff,
+      fog: { color: 0xe2f4ff, near: 170, far: 520 },
+      bounce: 0xdbe9f7,
       palette: {
-        dishCore: 0xe8eef5,
-        dishA: 0xd7dfe8,
-        dishB: 0xb9c4d2,
-        rim: 0xff3355,
-        post: 0x33aaff,
+        dishCore: { color: 0xffffff, polar: -0.07, wedges: 16, size: 2 },
+        // The terraces are one merged spinning mesh; these are its ring
+        // colours, alternating white and sky blue, with `theme.dish` wedges.
+        dishA: 0xf7fbff,
+        dishB: 0xc4e2ff,
+        // The rim kerb: chunky blocks in red / yellow / blue, white between.
+        rim: {
+          color: 0xff4a4a,
+          stripes: [0xff4a4a, 0xffffff, 0xffd23f, 0xffffff, 0x2a7de1, 0xffffff],
+          kerb: 1.1,
+          blockLen: 2.6,
+        },
+        post: { color: 0x2a7de1, ring: 0xffd23f },
+        lawn: { color: 0x58d935, checker: true },
       },
-      accent: 0xff3355,
-      accentAlt: 0x33aaff,
+      dish: { polar: -0.07, wedges: 24, ring: 2 },
+      seats: [0xff4a4a, 0x2a7de1, 0xffd23f, 0x45d65a],
+      emblem: [0xff4a4a, 0xffd23f, 0x2a7de1, 0xffffff],
+      groove: 0xffd23f,
+      accent: 0xff4a4a,
+      accentAlt: 0x2a7de1,
+      backdrop: {
+        clouds: { count: 14, r: [230, 360], y: [45, 110], size: [18, 32] },
+        rings: [
+          { prop: 'tree', count: 46, r: [96, 140], h: [7, 11], colors: {} },
+          { prop: 'hill', count: 24, r: [170, 230], h: [16, 34], base: -4, colors: {} },
+        ],
+      },
     },
     solids,
     visuals,

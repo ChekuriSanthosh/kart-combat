@@ -12,19 +12,20 @@ import { createServer } from 'http';
 import { Server } from 'socket.io';
 import { fileURLToPath } from 'url';
 import { dirname, join } from 'path';
+import { existsSync } from 'fs';
 
 import {
   EVENT, SIM_DT, SIM_HZ, SNAPSHOT_MS,
   MAP_IDS, DEFAULT_MAP_ID, JOIN_MODE,
   ROOM_CODE_ALPHABET, ROOM_CODE_LENGTH, normalizeRoomCode,
   DEFAULT_MAX_PLAYERS, clampMaxPlayers, CHEAT_CODES, ROOM_STATUS,
-  RESULTS_SECONDS, clampMatchSeconds,
+  clampMatchSeconds,
 } from './shared/constants.js';
 import { getMap } from './shared/maps/index.js';
 import {
   createRoom, createPlayer, fillBots, removeOneBot, trimBots,
   humanCount, setMap, setDifficulty, stepRoom, snapshot, roster, applyCheat,
-  lobbyState, startMatch, tickMatchClock,
+  lobbyState, startMatch, tickMatchClock, requestRespawn, matchOverPayload,
 } from './server/room.js';
 import { DEFAULT_DIFFICULTY, isDifficulty, getNavGrid } from './shared/ai/index.js';
 import { validCharacter, validKart } from './shared/cosmetics.js';
@@ -47,6 +48,33 @@ const rooms = new Map();
 /** socket.id → { roomId, playerId } */
 const index = new Map();
 
+/**
+ * What the menu's arena picker shows: each arena's name, how many people are
+ * driving it in public matches right now, and its thumbnail if one has been
+ * rendered into public/img/arenas. Listing the thumbnail only when the file
+ * exists lets the page skip the request instead of logging a 404 per card.
+ * Only humans count — every arena is always full of bots.
+ */
+app.get('/api/arenas', (_req, res) => {
+  const players = Object.fromEntries(MAP_IDS.map((id) => [id, 0]));
+  for (const room of rooms.values()) {
+    // A private match is not somewhere Play can take you.
+    if (room.isPrivate) continue;
+    players[room.mapId] = (players[room.mapId] || 0) + humanCount(room);
+  }
+  res.set('Cache-Control', 'no-store');
+  res.json({
+    arenas: MAP_IDS.map((id) => ({
+      id,
+      name: getMap(id).name,
+      players: players[id],
+      thumb: existsSync(join(__dirname, 'public', 'img', 'arenas', `${id}.jpg`))
+        ? `/img/arenas/${id}.jpg`
+        : null,
+    })),
+  });
+});
+
 function newRoomCode() {
   for (let attempt = 0; attempt < 50; attempt++) {
     let code = '';
@@ -60,8 +88,12 @@ function newRoomCode() {
   return `${Date.now().toString(36).toUpperCase()}`;
 }
 
-function openRoom(mapId, maxPlayers, isPrivate, difficulty) {
+function openRoom(mapId, maxPlayers, isPrivate, difficulty, setup = {}) {
   const room = createRoom(newRoomCode(), mapId, maxPlayers, { isPrivate, difficulty });
+  // Chosen in the menu's Create dialog; the host can still change them in the
+  // waiting room. Validated like the waiting room's CONFIG.
+  if (setup.matchSeconds !== undefined) room.matchSeconds = clampMatchSeconds(setup.matchSeconds);
+  if (typeof setup.fillWithBots === 'boolean') room.fillWithBots = setup.fillWithBots;
   // A private room is still gathering, and filling it with bots up front would
   // hide the only thing its host wants to see: who has actually arrived.
   if (room.status === ROOM_STATUS.PLAYING) fillBots(room);
@@ -81,8 +113,8 @@ function hasSpace(room) {
  * the busiest one so matches fill up instead of everyone sitting alone with
  * bots. A code takes you to one specific room and fails loudly if it has gone.
  */
-function findRoom({ mode, code, mapId, maxPlayers, difficulty }) {
-  if (mode === JOIN_MODE.PRIVATE) return openRoom(mapId, maxPlayers, true, difficulty);
+function findRoom({ mode, code, mapId, maxPlayers, difficulty, setup }) {
+  if (mode === JOIN_MODE.PRIVATE) return openRoom(mapId, maxPlayers, true, difficulty, setup);
 
   if (mode === JOIN_MODE.CODE) {
     const room = rooms.get(normalizeRoomCode(code));
@@ -94,8 +126,11 @@ function findRoom({ mode, code, mapId, maxPlayers, difficulty }) {
   let best = null;
   for (const room of rooms.values()) {
     if (room.isPrivate || !hasSpace(room)) continue;
-    // Quick play means "put me in a match now", so only live ones qualify.
-    if (room.status !== ROOM_STATUS.PLAYING) continue;
+    // Quick play means "put me in a match now". A room between rounds counts:
+    // the next one is seconds away, the newcomer sees the same winners screen
+    // as everyone else, and sending them off to a fresh room of bots instead
+    // would split up the people who are actually playing.
+    if (room.status === ROOM_STATUS.LOBBY) continue;
     if (mapId && room.mapId !== mapId) continue;
     // Someone who asked for hard bots should not be dropped into an easy room.
     if (difficulty && room.difficulty !== difficulty) continue;
@@ -150,7 +185,10 @@ io.on('connection', (socket) => {
       const mode = Object.values(JOIN_MODE).includes(payload.mode) ? payload.mode : JOIN_MODE.QUICK;
       const difficulty = isDifficulty(payload.difficulty) ? payload.difficulty : DEFAULT_DIFFICULTY;
 
-      const found = findRoom({ mode, code: payload.code, mapId, maxPlayers, difficulty });
+      const found = findRoom({
+        mode, code: payload.code, mapId, maxPlayers, difficulty,
+        setup: { matchSeconds: payload.matchSeconds, fillWithBots: payload.fillWithBots },
+      });
       if (found.error) {
         socket.emit(EVENT.ERROR, { message: found.error });
         return;
@@ -196,6 +234,10 @@ io.on('connection', (socket) => {
       io.to(room.id).emit('roster', roster(room));
       room.rosterDirty = false;
       broadcastLobby(room);
+      // Arriving after the whistle: show the same round-over / winners screen
+      // everyone else is looking at, counting down from where it is now.
+      const over = matchOverPayload(room);
+      if (over) socket.emit(EVENT.MATCH_OVER, over);
     } catch (err) {
       console.error('join failed', err);
       socket.emit(EVENT.ERROR, { message: 'Join failed' });
@@ -293,6 +335,17 @@ io.on('connection', (socket) => {
     broadcastLobby(room);
   }));
 
+  socket.on(EVENT.RESPAWN, safe('respawn', () => {
+    const ref = index.get(socket.id);
+    if (!ref) return;
+    const room = rooms.get(ref.roomId);
+    const player = room?.players.get(ref.playerId);
+    if (!player) return;
+    // The room decides whether it is too early; a refused request is simply
+    // dropped, and the client asks again on the next key press.
+    requestRespawn(room, player);
+  }));
+
   socket.on(EVENT.CHEAT, safe('cheat', (payload) => {
     const ref = index.get(socket.id);
     if (!ref) return;
@@ -301,7 +354,7 @@ io.on('connection', (socket) => {
     if (!player) return;
     const code = Number(payload?.code);
     if (!CHEAT_CODES.includes(code)) return;
-    applyCheat(room, player, code);
+    applyCheat(room, player, code, { weapon: typeof payload?.w === 'string' ? payload.w : undefined });
   }));
 
   socket.on(EVENT.LEAVE, () => leave(socket));
@@ -361,17 +414,17 @@ setInterval(() => {
     for (const room of rooms.values()) {
       // A room still gathering has nothing to simulate: its karts are parked
       // at spawn and will be reseated the moment the host starts anyway. A
-      // room on the results screen keeps running underneath it, so the arena
-      // behind the leaderboard is alive rather than frozen.
+      // room between rounds keeps running underneath "ROUND OVER" and the
+      // winners, so the arena behind them is alive rather than frozen —
+      // though nothing in it can fire or score (see stepRoom).
       if (room.status === ROOM_STATUS.LOBBY) continue;
       stepRoom(room, SIM_DT);
 
+      // 'winners' needs no message of its own: the snapshot's phase flips
+      // from 'roundOver' to 'results', and MATCH_OVER already said when.
       const change = tickMatchClock(room);
       if (change === 'ended') {
-        io.to(room.id).emit(EVENT.MATCH_OVER, {
-          standings: room.standings,
-          nextIn: RESULTS_SECONDS,
-        });
+        io.to(room.id).emit(EVENT.MATCH_OVER, matchOverPayload(room));
       } else if (change === 'restarted') {
         io.to(room.id).emit('roster', roster(room));
         io.to(room.id).emit(EVENT.MATCH_START, { seconds: room.matchSeconds });

@@ -7,7 +7,8 @@
  */
 import { chromium } from 'playwright';
 
-const BASE = process.argv[2] || 'http://localhost:3100';
+// PORT matches with-server.sh, so `PORT=3300 npm run X` tests the server it just started.
+const BASE = process.argv[2] || `http://localhost:${process.env.PORT || 3100}`;
 let failures = 0;
 const ok = (m) => console.log(`  ok    ${m}`);
 const fail = (m) => { failures++; console.log(`  FAIL  ${m}`); };
@@ -31,6 +32,7 @@ const shown = (p, sel) => p.evaluate((s) => {
 try {
   // ── Host creates a private match ──
   const host = await client('HostRacer');
+  await host.click('#btn-create');
   await host.click('#btn-create-party');
   await host.waitForSelector('#waiting:not(.hidden)', { timeout: 10000 });
   ok('creating a private match opens the waiting room, not a live game');
@@ -124,7 +126,8 @@ try {
 
   // ── Match timer, results screen, and the loop back into a new match ──
   const clock = (await host.textContent('#match-clock')).trim();
-  if (/^\d+:\d{2}$/.test(clock)) ok(`match clock is counting (${clock})`);
+  // Like the original, the clock is whole seconds left, not m:ss.
+  if (/^\d+$/.test(clock)) ok(`match clock is counting (${clock})`);
   else fail(`match clock looks wrong: "${clock}"`);
 
   const before = (await host.textContent('#match-clock')).trim();
@@ -149,7 +152,7 @@ try {
   else fail('results screen did not appear');
 
   const winnerText = (await host.textContent('#results-winner')).trim();
-  if (/Winner wins!/.test(winnerText)) ok(`winner announced ("${winnerText}")`);
+  if (/Winners Are/.test(winnerText) && /Winner/.test(winnerText.replace('Winners Are', ''))) ok(`winner announced ("${winnerText}")`);
   else fail(`winner line wrong: "${winnerText}"`);
 
   const standingRows = await host.$$eval('#results-list li', (n) => n.map((e) => e.textContent));
@@ -161,6 +164,22 @@ try {
     (el) => el.classList.contains('first'));
   if (firstHighlighted) ok('winner row is highlighted');
   else fail('winner row is not highlighted');
+
+  // A tie at the top is shared, the way the server now ranks it: both names
+  // are winners, rather than whichever happened to sort first.
+  await host.evaluate(() => {
+    const standings = [
+      { i: 'zz1', n: 'Alpha', c: 0xff5533, sc: 5, k: 5, rank: 1 },
+      { i: 'zz2', n: 'Bravo', c: 0x3498db, sc: 5, k: 5, rank: 1 },
+      { i: window.__kc.localId || 'me', n: 'HostRacer', c: 0x2ecc71, sc: 1, k: 1, rank: 3 },
+    ];
+    window.__kc.socket.listeners('match:over')
+      .forEach((fn) => fn({ standings, winners: ['zz1', 'zz2'], roundOverSeconds: 0, nextIn: 10 }));
+  });
+  await host.waitForTimeout(300);
+  const tieText = (await host.textContent('#results-winner')).trim();
+  if (/Alpha/.test(tieText) && /Bravo/.test(tieText)) ok(`a tie names both winners ("${tieText}")`);
+  else fail(`tie announced as "${tieText}"`);
 
   // And the loop back out of it.
   await host.evaluate(() => {

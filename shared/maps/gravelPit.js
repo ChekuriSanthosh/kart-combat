@@ -1,7 +1,8 @@
 /**
- * Gravel Pit — sun-baked desert arena.
- * A central rock butte to circle, four raised decks with ramps, launch ramps
- * for air time, and crates/tyres for cover.
+ * Gravel Pit — a sunny toy desert.
+ * A central cluster of rounded boulders to circle, four raised decks with
+ * ramps, launch ramps for air time, and giant toy blocks for cover. Outside
+ * the walls: cacti and palms, banded mesas, and a sea on the horizon.
  */
 
 import { box, cyl, ramp, decor, arenaWalls, spawnRing, circlePoints } from './helpers.js';
@@ -65,7 +66,7 @@ export default function gravelPit() {
       DECK_SIZE,
       1.1,
       1.4,
-      'crate',
+      'parapet',
       { rotY },
     ));
 
@@ -89,8 +90,10 @@ export default function gravelPit() {
   // instead of a fight. Four crates and four boulders, all well clear of the
   // ramp mouths and the racing line around the butte.
   const crateSpots = [[-31, -14], [31, 14], [-14, 31], [14, -31]];
+  // Giant toy blocks, one of each colour. `tint` is read only by the renderer.
+  const blockTints = [0xff4a4a, 0x2a7de1, 0x45d65a, 0xb36bff];
   crateSpots.forEach(([x, z], i) => {
-    solids.push(box(x, 0, z, 2.6, 2.6, 2.6, 'crate', { rotY: (i * 0.7) % Math.PI }));
+    solids.push(box(x, 0, z, 2.6, 2.6, 2.6, 'crate', { rotY: (i * 0.7) % Math.PI, tint: blockTints[i] }));
   });
 
   for (const [x, z, r] of [[-36, 0, 3.0], [36, 0, 3.0], [0, -36, 2.7], [0, 36, 2.7]]) {
@@ -98,31 +101,35 @@ export default function gravelPit() {
   }
 
   // ── Visual dressing (no collision) ──
-  visuals.push(decor('ground', 0, 0, 0, { size: (HALF + WALL_T) * 2, mat: 'sand' }));
-  // Striped barriers hug the wall, where they add colour without ever being
-  // something you slam into mid-fight.
-  for (const [x, z, rotY] of [
-    [-39, 0, 0], [39, 0, 0], [0, -39, Math.PI / 2], [0, 39, Math.PI / 2],
-  ]) {
-    visuals.push(decor('barrier', x, 0, z, { len: 14, rotY }));
-  }
-  // Scrub patches give the eye something to track speed against.
+  // A sand island reaching well past the walls, with the sea beyond it (see
+  // theme.backdrop), so the arena sits in a landscape rather than a void.
+  visuals.push(decor('ground', 0, 0, 0, { size: 300, mat: 'sand', round: true }));
+  // Warm patches give the eye something to track speed against.
   for (const [x, z, r] of [
-    [-22, -30, 9], [24, 28, 11], [-30, 20, 8], [31, -22, 9],
-    [0, 0, 11], [-8, 40, 6], [9, -40, 6],
+    [-22, -30, 7], [24, 28, 8], [-30, 20, 6], [31, -22, 7],
+    [-8, 38, 4.5], [9, -38, 4.5],
   ]) {
-    visuals.push(decor('patch', x, 0, z, { r, mat: 'grass' }));
+    visuals.push(decor('patch', x, 0, z, { r, mat: 'sandPatch' }));
   }
   // Flags stand on top of the wall — down on the floor karts would drive
   // straight through the poles.
   circlePoints(10, HALF + WALL_T / 2, 0, 0.31).forEach((p, i) => {
     visuals.push(decor('flag', p.x, WALL_H, p.z, { height: 6, tint: i % 4 }));
   });
-  circlePoints(18, 62, 0).forEach((p, i) => {
-    visuals.push(decor('mesa', p.x, 0, p.z, { r: 7 + (i % 5) * 2.2, h: 12 + (i % 4) * 7 }));
+  // Bunting strung along the north and south walls.
+  visuals.push(decor('bunting', 0, WALL_H, -HALF - WALL_T / 2, { w: 26, h: 5 }));
+  visuals.push(decor('bunting', 0, WALL_H, HALF + WALL_T / 2, { w: 26, h: 5 }));
+  // Just outside the walls: palms tall enough to show over them, and cacti.
+  circlePoints(10, 53, 0, 0.05).forEach((p, i) => {
+    visuals.push(decor('palm', p.x, 0, p.z, { h: 9 + (i % 3) * 1.6 }));
   });
-  visuals.push(decor('banner', 0, 0, -HALF + 1.8, { w: 26, rotY: 0 }));
-  visuals.push(decor('banner', 0, 0, HALF - 1.8, { w: 26, rotY: Math.PI }));
+  circlePoints(9, 60, 0, 0.21).forEach((p, i) => {
+    visuals.push(decor('cactus', p.x, 0, p.z, { h: 3.6 + (i % 4) * 0.8 }));
+  });
+  // Banded mesas further out: the skyline you see over the wall.
+  circlePoints(12, 84, 0, 0.02).forEach((p, i) => {
+    visuals.push(decor('mesa', p.x, 0, p.z, { r: 9 + (i % 4) * 2.4, h: 15 + (i % 5) * 4.5 }));
+  });
 
   // ── Pickups: arcs around the butte plus lane drops ──
   // Crates are deliberately scarce — they are worth fighting over, and a field
@@ -138,28 +145,38 @@ export default function gravelPit() {
     killY: -12,
     arenaRadius: HALF + WALL_T,
     theme: {
-      background: 0x9fd6f5,
-      fog: { color: 0xe8cfa2, near: 80, far: 230 },
-      // Fill is kept low on purpose. Wash the scene in ambient light and the
-      // shadows disappear, which is what made the arena look flat and papery.
-      // Enough bounce that faces turned away from the sun stay readable rock
-      // rather than black cut-outs, but not so much that it flattens shadows.
-      hemi: { sky: 0xbfe6ff, ground: 0x9a7448, intensity: 0.45 },
-      ambient: { color: 0xfff1d8, intensity: 0.26 },
-      // A lower sun throws longer shadows, which is most of what makes the
-      // arena read as solid rather than painted on.
-      sun: { color: 0xfff6e2, intensity: 2.6, x: 46, y: 54, z: 32 },
+      // Sky dome gradient; `background` and the fog match its horizon so the
+      // far edge of the world melts into it instead of ending at a line.
+      sky: { top: 0x4ea8ff, horizon: 0xe2f4ff, bottom: 0xe2f4ff },
+      background: 0xe2f4ff,
+      fog: { color: 0xe2f4ff, near: 170, far: 520 },
+      // Light bounced up off the sand warms the undersides of everything.
+      bounce: 0xf3dcaa,
+      mesaBands: [0xf08a4b, 0xf9c27a, 0xe4703f, 0xfbd9a0],
+      flags: [0xff4a4a, 0xffd23f, 0x2a7de1, 0x45d65a],
       palette: {
-        sand: 0xe8c98d,
-        dirt: 0x8f5f33,
-        cliff: 0xb26a3c,
-        rock: 0x8d8377,
-        plateau: 0xc25a3f,
-        crate: 0xd99b3f,
-        tyre: 0x2e2e33,
-        metal: 0xf5a623,
-        grass: 0x6bbf4a,
-        barrier: 0xe8413c,
+        sand: { color: 0xf7c95c, checker: true },
+        sandPatch: { color: 0xf3b44c },
+        cliff: { color: 0xf47b20, round: 0.9 },
+        plateau: { color: 0xf2665a, checker: true, round: 0.55 },
+        parapet: { color: 0xffd23f, studs: true, round: 0.3 },
+        dirt: { color: 0xffd23f, stripe: 0xffffff },
+        metal: { color: 0x2a7de1, stripe: 0x7fbaff },
+        crate: { color: 0xff4a4a, studs: true, round: 0.32 },
+        rock: { color: 0xe89a5a, boulder: true },
+      },
+      backdrop: {
+        sea: { color: 0x3fb2ff, from: 150, y: -0.35 },
+        clouds: { count: 14, r: [230, 360], y: [45, 110], size: [18, 32] },
+        rings: [
+          // Palms along the beach and big banded buttes standing in the sea.
+          { prop: 'palm', count: 26, r: [128, 144], h: [9, 13], colors: {} },
+          { prop: 'cactus', count: 14, r: [106, 122], h: [4, 6], colors: {} },
+          {
+            prop: 'mesa', count: 9, r: [230, 300], h: [34, 64], widthRatio: 0.55,
+            phase: 0.3, base: -6, colors: { bands: [0xf08a4b, 0xf9c27a, 0xe4703f, 0xfbd9a0] },
+          },
+        ],
       },
     },
     solids,

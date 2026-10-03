@@ -1,123 +1,188 @@
 /**
- * Material and texture factory. Everything is procedural so the game ships
- * with no image assets, and the palette leans bright and flat to match the
- * chunky cartoon look of the game we are imitating.
+ * The toy material kit.
+ *
+ * Every arena surface is a flat-coloured Lambert material: no textures, no
+ * roughness or metalness, no emissive glow. What gives the floors their
+ * character is one shared pattern, drawn in the shader from the fragment's
+ * position rather than from a texture:
+ *
+ *   checker  two tones of one hue ~6% lightness apart in 2.5 m squares, laid
+ *            out in WORLD space so the squares are the same size on every
+ *            surface and line up across separate pieces (a deck's top
+ *            continues the grid of the ground beside it). Only upward-facing
+ *            surfaces get it; walls and the sides of platforms stay flat, the
+ *            way the original's do.
+ *   stripes  bands across a ramp's local climb axis, so a ramp reads as a
+ *            ramp from any distance.
+ *   polar    wedges × rings in the mesh's own space, for the spinning dish:
+ *            a world-space pattern would stand still while the floor turned
+ *            under it, and the rotation would be invisible.
+ *
+ * The checker and stripes are box-filtered with fwidth, so a floor stretching
+ * to the horizon fades to its average colour instead of crawling with moiré.
  */
 
 import * as THREE from 'three';
 
-const canvasTex = (size, paint, repeat = 1) => {
-  const canvas = document.createElement('canvas');
-  canvas.width = size;
-  canvas.height = size;
-  paint(canvas.getContext('2d'), size);
-  const tex = new THREE.CanvasTexture(canvas);
-  tex.wrapS = THREE.RepeatWrapping;
-  tex.wrapT = THREE.RepeatWrapping;
-  tex.repeat.set(repeat, repeat);
-  tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = 4;
-  return tex;
-};
+/** World size of one floor checker square, in metres. */
+export const CHECKER_SIZE = 2.5;
+/** Default lightness step between the two checker tones (HSL, sRGB). */
+export const CHECKER_STEP = -0.055;
 
-export function sandTexture(base = '#e0be7e') {
-  return canvasTex(256, (ctx, s) => {
-    ctx.fillStyle = base;
-    ctx.fillRect(0, 0, s, s);
-    for (let i = 0; i < 900; i++) {
-      const r = 1 + Math.random() * 3.2;
-      const shade = 200 + Math.floor(Math.random() * 45);
-      ctx.fillStyle = `rgba(${shade},${shade - 30},${shade - 80},0.5)`;
-      ctx.beginPath();
-      ctx.arc(Math.random() * s, Math.random() * s, r, 0, Math.PI * 2);
-      ctx.fill();
-    }
-    for (let i = 0; i < 18; i++) {
-      ctx.strokeStyle = 'rgba(150,115,70,0.25)';
-      ctx.lineWidth = 1 + Math.random() * 2;
-      ctx.beginPath();
-      ctx.arc(Math.random() * s, Math.random() * s, 20 + Math.random() * 70, 0, Math.PI * 1.4);
-      ctx.stroke();
-    }
-  }, 14);
+const PATTERN = { checker: 1, stripes: 2, polar: 3 };
+
+/** `hex` with its HSL lightness (and optionally saturation) nudged, in sRGB. */
+export function shade(hex, dl, ds = 0) {
+  const c = new THREE.Color(hex);
+  const hsl = {};
+  c.getHSL(hsl, THREE.SRGBColorSpace);
+  c.setHSL(
+    hsl.h,
+    THREE.MathUtils.clamp(hsl.s + ds, 0, 1),
+    THREE.MathUtils.clamp(hsl.l + dl, 0, 1),
+    THREE.SRGBColorSpace,
+  );
+  return c.getHex();
 }
 
-export function gridTexture(base = '#151a3a', line = '#00e5ff', repeat = 10) {
-  return canvasTex(128, (ctx, s) => {
-    ctx.fillStyle = base;
-    ctx.fillRect(0, 0, s, s);
-    ctx.strokeStyle = line;
-    ctx.globalAlpha = 0.55;
-    ctx.lineWidth = 4;
-    ctx.strokeRect(2, 2, s - 4, s - 4);
-    ctx.globalAlpha = 0.22;
-    ctx.lineWidth = 2;
-    for (let i = s / 4; i < s; i += s / 4) {
-      ctx.beginPath(); ctx.moveTo(i, 0); ctx.lineTo(i, s); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(0, i); ctx.lineTo(s, i); ctx.stroke();
-    }
-  }, repeat);
+const PATTERN_VERTEX_HEAD = /* glsl */ `
+varying vec3 vKcPos;
+varying vec3 vKcNormal;
+`;
+
+// After project_vertex both `transformed` and `objectNormal` exist, whatever
+// else the material has switched on.
+const PATTERN_VERTEX_BODY = /* glsl */ `
+{
+  vec4 kcP = vec4( transformed, 1.0 );
+  vec3 kcN = objectNormal;
+  #ifndef KC_LOCAL
+    #ifdef USE_INSTANCING
+      kcP = instanceMatrix * kcP;
+      kcN = mat3( instanceMatrix ) * kcN;
+    #endif
+    kcP = modelMatrix * kcP;
+    kcN = mat3( modelMatrix ) * kcN;
+  #endif
+  vKcPos = kcP.xyz;
+  vKcNormal = kcN;
+}
+`;
+
+const PATTERN_FRAGMENT_HEAD = /* glsl */ `
+varying vec3 vKcPos;
+varying vec3 vKcNormal;
+uniform vec3 uKcTint;
+uniform float uKcSize;
+uniform float uKcWedges;
+
+// Box-filtered square wave: +1 / -1 in alternate cells, blended across the
+// footprint of one pixel so distant cells average out instead of aliasing.
+vec2 kcSquare( vec2 p ) {
+  vec2 w = fwidth( p ) + 1e-4;
+  return 2.0 * ( abs( fract( ( p - 0.5 * w ) * 0.5 ) - 0.5 )
+               - abs( fract( ( p + 0.5 * w ) * 0.5 ) - 0.5 ) ) / w;
+}
+`;
+
+const PATTERN_FRAGMENT_BODY = /* glsl */ `
+{
+  // Only faces that point up are floors. Derived from the interpolated normal,
+  // so a rounded edge fades between the two rather than cutting hard.
+  float kcUp = smoothstep( 0.45, 0.75, normalize( vKcNormal ).y );
+  #if KC_PATTERN == 1
+    vec2 kcI = kcSquare( vKcPos.xz / uKcSize );
+    float kcK = 0.5 - 0.5 * kcI.x * kcI.y;
+  #elif KC_PATTERN == 2
+    float kcK = 0.5 - 0.5 * kcSquare( vec2( vKcPos.z / uKcSize, 0.0 ) ).x;
+  #else
+    // Wedges are hard-edged: the angle wraps at ±π, and a filter width taken
+    // across that seam would smear a line along it. The two tones are close
+    // enough that the missing filtering does not show.
+    float kcR = floor( length( vKcPos.xz ) / uKcSize );
+    float kcA = floor( ( atan( vKcPos.z, vKcPos.x ) / 6.2831853 + 0.5 ) * uKcWedges );
+    float kcK = mod( kcR + kcA, 2.0 );
+  #endif
+  // A multiplier rather than a second colour, so the same pattern also works
+  // on vertex-coloured batches where every part has its own base colour.
+  diffuseColor.rgb *= mix( vec3( 1.0 ), uKcTint, kcK * kcUp );
+}
+`;
+
+/**
+ * Adds a procedural floor pattern to a Lambert material (in place).
+ *
+ *   mode    'checker' | 'stripes' | 'polar'
+ *   alt     second tone, sRGB hex
+ *   base    the colour `alt` is relative to (defaults to the material's);
+ *           the shader multiplies by alt/base, so on a vertex-coloured
+ *           material every part keeps its own hue and just darkens or
+ *           lightens by the same ratio
+ *   size    cell / stripe / ring width in metres
+ *   wedges  polar only: wedge count around the circle
+ *   local   use the mesh's own space instead of world space (forced for
+ *           stripes and polar, which follow their mesh)
+ */
+export function addPattern(material, {
+  mode = 'checker', alt, base, size = CHECKER_SIZE, wedges = 24, local = false,
+}) {
+  const kind = PATTERN[mode] ?? PATTERN.checker;
+  const inLocal = local || kind !== PATTERN.checker;
+  // Ratio in linear space, which is where the shader works.
+  const from = base !== undefined ? new THREE.Color(base) : material.color.clone();
+  const to = new THREE.Color(alt);
+  const ratio = (a, b) => (a > 1e-4 ? b / a : 1);
+  const uniforms = {
+    uKcTint: { value: new THREE.Vector3(ratio(from.r, to.r), ratio(from.g, to.g), ratio(from.b, to.b)) },
+    uKcSize: { value: size },
+    uKcWedges: { value: wedges },
+  };
+  material.defines = { ...(material.defines || {}), KC_PATTERN: kind };
+  if (inLocal) material.defines.KC_LOCAL = 1;
+  material.onBeforeCompile = (shader) => {
+    Object.assign(shader.uniforms, uniforms);
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', `#include <common>\n${PATTERN_VERTEX_HEAD}`)
+      .replace('#include <project_vertex>', `#include <project_vertex>\n${PATTERN_VERTEX_BODY}`);
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', `#include <common>\n${PATTERN_FRAGMENT_HEAD}`)
+      .replace('#include <color_fragment>', `#include <color_fragment>\n${PATTERN_FRAGMENT_BODY}`);
+  };
+  // Every patterned material compiles the same source; only the defines
+  // differ, and three already keys programs on those.
+  material.customProgramCacheKey = () => `kc-pattern-${kind}-${inLocal ? 1 : 0}`;
+  material.userData.pattern = uniforms;
+  return material;
 }
 
-export function stripeTexture(a = '#ff3355', b = '#ffffff', repeat = 6) {
-  return canvasTex(64, (ctx, s) => {
-    ctx.fillStyle = a;
-    ctx.fillRect(0, 0, s, s);
-    ctx.fillStyle = b;
-    for (let i = 0; i < s; i += s / 4) ctx.fillRect(i, 0, s / 8, s);
-  }, repeat);
-}
-
-export function treadTexture() {
-  return canvasTex(64, (ctx, s) => {
-    ctx.fillStyle = '#1c1c22';
-    ctx.fillRect(0, 0, s, s);
-    ctx.fillStyle = '#2e2e38';
-    for (let i = 0; i < s; i += 10) ctx.fillRect(i, 0, 5, s);
-  }, 2);
-}
-
-export function grassTexture(base = '#6f9e3f') {
-  return canvasTex(256, (ctx, s) => {
-    ctx.fillStyle = base;
-    ctx.fillRect(0, 0, s, s);
-    // Mown stripes, the way a big field actually looks from above.
-    ctx.fillStyle = 'rgba(255,255,255,0.05)';
-    for (let i = 0; i < s; i += 32) ctx.fillRect(i, 0, 16, s);
-    // Scattered tufts so the stripes do not read as a flat gradient.
-    for (let i = 0; i < 1400; i++) {
-      const g = 90 + Math.floor(Math.random() * 70);
-      ctx.fillStyle = `rgba(${g - 30},${g},${40 + Math.random() * 30},0.45)`;
-      ctx.fillRect(Math.random() * s, Math.random() * s, 1 + Math.random() * 2, 2 + Math.random() * 3);
-    }
-  }, 22);
-}
-
-export function plankTexture(base = '#b8352c') {
-  return canvasTex(128, (ctx, s) => {
-    ctx.fillStyle = base;
-    ctx.fillRect(0, 0, s, s);
-    ctx.strokeStyle = 'rgba(0,0,0,0.22)';
-    ctx.lineWidth = 2;
-    for (let y = 0; y < s; y += 16) {
-      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(s, y); ctx.stroke();
-    }
-    ctx.fillStyle = 'rgba(255,255,255,0.05)';
-    for (let i = 0; i < 40; i++) ctx.fillRect(Math.random() * s, Math.random() * s, 20, 3);
-  }, 4);
-}
-
-export function hayTexture(base = '#d8b053') {
-  return canvasTex(128, (ctx, s) => {
-    ctx.fillStyle = base;
-    ctx.fillRect(0, 0, s, s);
-    for (let i = 0; i < 600; i++) {
-      ctx.strokeStyle = `rgba(${150 + Math.random() * 80},${110 + Math.random() * 60},40,0.5)`;
-      ctx.lineWidth = 1;
-      const x = Math.random() * s; const y = Math.random() * s;
-      ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x + Math.random() * 14 - 7, y + 3); ctx.stroke();
-    }
-  }, 3);
+/**
+ * A palette entry is either a plain colour or a spec:
+ *   { color, checker?: true | lightnessStep, stripe?: hex, stripeWidth?,
+ *     polar?: true | lightnessStep, wedges?, opacity?, emissive?, vertexColors? }
+ * plus render hints MapBuilder reads off the same entry (round, studs,
+ * boulder, bale, ring, stripes, kerb, glass — see buildSolid).
+ * Returns a ready material. Anything left out is a flat Lambert colour.
+ */
+export function toyMaterial(spec) {
+  const s = typeof spec === 'object' && spec !== null ? spec : { color: spec ?? 0xcccccc };
+  const mat = new THREE.MeshLambertMaterial({
+    color: s.color,
+    emissive: s.emissive ?? 0x000000,
+    transparent: s.opacity !== undefined && s.opacity < 1,
+    opacity: s.opacity ?? 1,
+    side: s.side ?? THREE.FrontSide,
+    vertexColors: !!s.vertexColors,
+  });
+  if (s.checker) {
+    const step = s.checker === true ? CHECKER_STEP : s.checker;
+    addPattern(mat, { mode: 'checker', alt: shade(s.color, step), size: s.size ?? CHECKER_SIZE });
+  } else if (s.stripe !== undefined) {
+    addPattern(mat, { mode: 'stripes', alt: s.stripe, size: s.stripeWidth ?? 1.1 });
+  } else if (s.polar) {
+    const step = s.polar === true ? CHECKER_STEP : s.polar;
+    addPattern(mat, { mode: 'polar', alt: shade(s.color, step), size: s.size ?? 2, wedges: s.wedges ?? 24 });
+  }
+  return mat;
 }
 
 /**
@@ -127,101 +192,49 @@ export function hayTexture(base = '#d8b053') {
 export function createMaterialLibrary(theme) {
   const palette = theme.palette || {};
   const cache = new Map();
+  const flats = new Map();
   const disposables = [];
 
   const track = (x) => { disposables.push(x); return x; };
 
-  function base(name) {
-    const color = palette[name] ?? 0xcccccc;
-    switch (name) {
-      case 'grass':
-        return new THREE.MeshStandardMaterial({
-          color, map: track(grassTexture(`#${color.toString(16).padStart(6, '0')}`)),
-          roughness: 1, metalness: 0,
-        });
-      case 'barnWall':
-        return new THREE.MeshStandardMaterial({
-          color: 0xffffff, map: track(plankTexture(`#${color.toString(16).padStart(6, '0')}`)),
-          roughness: 0.85, metalness: 0,
-        });
-      case 'hay':
-        return new THREE.MeshStandardMaterial({
-          color: 0xffffff, map: track(hayTexture(`#${color.toString(16).padStart(6, '0')}`)),
-          roughness: 1, metalness: 0,
-        });
-      case 'silo':
-        return new THREE.MeshStandardMaterial({
-          color, roughness: 0.45, metalness: 0.4,
-        });
-      case 'fence':
-      case 'millBase':
-        return new THREE.MeshStandardMaterial({ color, roughness: 0.8, metalness: 0.05 });
-      case 'sand':
-        return new THREE.MeshStandardMaterial({
-          color, map: track(sandTexture()), roughness: 1, metalness: 0,
-        });
-      case 'tyre':
-        return new THREE.MeshStandardMaterial({
-          color, map: track(treadTexture()), roughness: 0.95, metalness: 0,
-        });
-      case 'barrier':
-        return new THREE.MeshStandardMaterial({
-          color: 0xffffff, map: track(stripeTexture('#e8413c', '#f7f7f7', 3)),
-          roughness: 0.6, metalness: 0.05,
-        });
-      case 'rail':
-      case 'bumper':
-        return new THREE.MeshStandardMaterial({
-          color, emissive: color, emissiveIntensity: 0.65, roughness: 0.3, metalness: 0.2,
-        });
-      case 'rampNeon':
-        return new THREE.MeshStandardMaterial({
-          color, emissive: color, emissiveIntensity: 0.35, roughness: 0.4, metalness: 0.25,
-        });
-      case 'deck':
-      case 'island':
-      case 'bridge':
-        return new THREE.MeshStandardMaterial({
-          color,
-          map: track(gridTexture(`#${color.toString(16).padStart(6, '0')}`, `#${(theme.accent ?? 0x00e5ff).toString(16).padStart(6, '0')}`, 6)),
-          roughness: 0.55, metalness: 0.25,
-          emissive: theme.accent ?? 0x00e5ff, emissiveIntensity: 0.05,
-        });
-      case 'metal':
-        return new THREE.MeshStandardMaterial({
-          color, roughness: 0.35, metalness: 0.65,
-          emissive: color, emissiveIntensity: 0.18,
-        });
-      case 'rim':
-        return new THREE.MeshStandardMaterial({
-          color, roughness: 0.4, metalness: 0.35,
-          emissive: color, emissiveIntensity: 0.3,
-        });
-      case 'dishCore':
-      case 'dishA':
-      case 'dishB':
-        return new THREE.MeshStandardMaterial({ color, roughness: 0.32, metalness: 0.55 });
-      default:
-        return new THREE.MeshStandardMaterial({ color, roughness: 0.85, metalness: 0.05 });
-    }
-  }
-
   return {
+    /** The material for a palette name (a solid's `mat`). */
     get(name) {
       let m = cache.get(name);
       if (!m) {
-        m = track(base(name));
+        m = track(toyMaterial(palette[name] ?? 0xcccccc));
         cache.set(name, m);
       }
       return m;
     },
-    make(opts) {
-      return track(new THREE.MeshStandardMaterial(opts));
+    /** The palette entry's base colour as a hex, whatever shape it has. */
+    color(name) {
+      const p = palette[name];
+      return typeof p === 'object' && p !== null ? p.color : (p ?? 0xcccccc);
+    },
+    /** A shared flat Lambert material per colour (and side). */
+    flat(color, side = THREE.FrontSide) {
+      const key = `${color}:${side}`;
+      let m = flats.get(key);
+      if (!m) {
+        m = track(new THREE.MeshLambertMaterial({ color, side }));
+        flats.set(key, m);
+      }
+      return m;
+    },
+    /** One-off material from a palette-style spec (see toyMaterial). */
+    make(spec) {
+      return track(toyMaterial(spec));
+    },
+    /** One-off material from raw Lambert options. */
+    lambert(opts) {
+      return track(new THREE.MeshLambertMaterial(opts));
     },
     dispose() {
       for (const d of disposables) d.dispose?.();
       disposables.length = 0;
       cache.clear();
+      flats.clear();
     },
   };
 }

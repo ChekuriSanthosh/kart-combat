@@ -1,7 +1,7 @@
 /**
- * Sky Pinball — neon platforms floating over a void.
+ * Sky Pinball — a candy sky park floating above the clouds.
  * A fast, bumper-filled lower deck ringed by four elevated islands joined into
- * an outer circuit. Miss a bridge and you fall.
+ * an outer circuit. Miss a bridge and you drop into the cloud sea.
  */
 
 import { box, cyl, ramp, decor, spawnRing, circlePoints } from './helpers.js';
@@ -118,24 +118,31 @@ export default function skyPinball() {
   // One centre boss and a single ring. Earlier versions had three rings, which
   // turned the deck into an obstacle course you pinballed through rather than
   // an arena you could actually aim and drive in.
+  // `tint` is render-only: every bumper a different candy colour.
+  const bumperTints = [0xffd23f, 0x3ee7ff, 0x45d65a, 0xff9a1f, 0x4a98f0, 0xb36bff];
   const bumperSpots = [
-    { x: 0, z: 0, r: 2.6, bounce: 24 },
-    ...circlePoints(6, 15, 0, 0.083).map((p) => ({ x: p.x, z: p.z, r: 1.5, bounce: 18 })),
+    { x: 0, z: 0, r: 2.6, bounce: 24, tint: 0xff4a6a },
+    ...circlePoints(6, 15, 0, 0.083).map((p, i) => ({ x: p.x, z: p.z, r: 1.5, bounce: 18, tint: bumperTints[i] })),
   ];
   for (const b of bumperSpots) {
-    solids.push(cyl(b.x, 0, b.z, b.r, 2.4, 'bumper', { bumper: true, bounce: b.bounce }));
+    solids.push(cyl(b.x, 0, b.z, b.r, 2.4, 'bumper', { bumper: true, bounce: b.bounce, tint: b.tint }));
   }
 
   // ── Visual dressing ──
-  visuals.push(decor('voidGrid', 0, -26, 0, { size: 320 }));
-  visuals.push(decor('deckGlow', 0, 0.02, 0, { r: DECK_R - 0.4 }));
-  circlePoints(24, 78, 0).forEach((p, i) => {
-    visuals.push(decor('skyShard', p.x, -8 + (i % 6) * 9, p.z, { r: 4 + (i % 4) * 3 }));
+  // Painted pinball-table lines on the deck: round the bumper ring and just
+  // inside the rail.
+  visuals.push(decor('paintRing', 0, 0, 0, { r: DECK_R - 2.2, w: 0.45 }));
+  visuals.push(decor('paintRing', 0, 0, 0, { r: 18.2, w: 0.35 }));
+  visuals.push(decor('paintRing', 0, 0, 0, { r: 5.4, w: 0.35, color: 0xffd23f }));
+  // Little grassy islands bobbing around the park at every height.
+  circlePoints(12, 82, 0, 0.04).forEach((p, i) => {
+    visuals.push(decor('floatIsle', p.x * (1 + (i % 3) * 0.12), -6 + (i % 5) * 5, p.z * (1 + (i % 3) * 0.12), { r: 3 + (i % 4) * 1.2 }));
   });
-  // Beacons sit beyond the outer lip so karts never drive through them.
+  // Candy-striped poles stand beyond the outer lip so karts never drive
+  // through them.
   for (const [ox, oz] of islandDirs) {
     const beyond = ISLAND_DIST + ISLAND_SIZE / 2 + 1.6;
-    visuals.push(decor('pylon', ox * beyond, ISLAND_TOP - 1, oz * beyond, { h: 9 }));
+    visuals.push(decor('candyPole', ox * beyond, ISLAND_TOP - 1, oz * beyond, { h: 9 }));
   }
 
   // ── Pickups: scarce on purpose, so crates are worth contesting ──
@@ -160,21 +167,33 @@ export default function skyPinball() {
     killY: -30,
     arenaRadius: ISLAND_DIST + ISLAND_SIZE / 2,
     theme: {
-      background: 0x0a0a1f,
-      fog: { color: 0x120a2e, near: 70, far: 230 },
-      hemi: { sky: 0x5566ff, ground: 0x180a30, intensity: 0.32 },
-      ambient: { color: 0x8899ff, intensity: 0.2 },
-      sun: { color: 0xdce8ff, intensity: 2.4, x: 38, y: 50, z: 44 },
+      // Daylight all round, and the bottom of the sky is cloud-white: the
+      // void reads as a drop into the clouds, not into black space.
+      sky: { top: 0x52adff, horizon: 0xdff3ff, bottom: 0xf5faff },
+      background: 0xdff3ff,
+      fog: { color: 0xdff3ff, near: 180, far: 520 },
+      bounce: 0xece6ff,
       palette: {
-        deck: 0x1d2350,
-        rail: 0x00e5ff,
-        island: 0x2a1a55,
-        rampNeon: 0xb14eff,
-        bridge: 0x243066,
-        bumper: 0xff2d95,
+        deck: { color: 0xa596ff, checker: true },
+        rail: { color: 0xff6fae, round: 0.5 },
+        island: { color: 0x5fe08a, checker: true, round: 0.45 },
+        rampNeon: { color: 0xffb02e, stripe: 0xffffff },
+        bridge: { color: 0xffd84d, checker: true, round: 0.3 },
+        // Bumpers are tinted one by one; this is the shared shape.
+        bumper: { color: 0xff4a6a, ring: 0xffffff },
       },
-      accent: 0x00e5ff,
-      accentAlt: 0xff2d95,
+      // Kept for anything that wants one signature colour per arena.
+      accent: 0xff6fae,
+      accentAlt: 0xa596ff,
+      backdrop: {
+        // Below the platforms, above the kill plane: a fall vanishes into
+        // cloud a beat before it counts.
+        cloudSea: { y: -24, r: 330, size: 20 },
+        clouds: { count: 16, r: [200, 340], y: [30, 95], size: [18, 32] },
+        rings: [
+          { prop: 'cloudBank', count: 18, r: [160, 250], h: [16, 28], y: -12 },
+        ],
+      },
     },
     solids,
     visuals,

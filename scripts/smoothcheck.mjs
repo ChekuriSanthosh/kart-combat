@@ -10,7 +10,8 @@
 
 import { chromium } from 'playwright';
 
-const BASE = process.argv[2] || 'http://localhost:3100';
+// PORT matches with-server.sh, so `PORT=3300 npm run X` tests the server it just started.
+const BASE = process.argv[2] || `http://localhost:${process.env.PORT || 3100}`;
 /**
  * Every arena, not just the first one. This used to default to `gravelPit`
  * and take no other argument in practice, so the two maps that actually had a
@@ -29,6 +30,7 @@ const page = await browser.newPage({ viewport: { width: 1000, height: 640 } });
 page.on('pageerror', (e) => console.log('ERR', e.message));
 
 await page.goto(BASE, { waitUntil: 'networkidle' });
+await page.click('#btn-arena');
 await page.click(`.map-card[data-map="${MAP}"]`);
 await page.click('#btn-play');
 await page.waitForSelector('#hud:not(.hidden)');

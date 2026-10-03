@@ -73,8 +73,10 @@ export function aimAt(def, shooter, target, lead = 1) {
   const t = target.state;
   const dist = Math.hypot(t.x - s.x, t.z - s.z);
 
-  // Mines are dropped behind, and self-buffs are not aimed at all.
-  if (!def || def.kind === 'self' || def.kind === 'mine') return null;
+  // Mines are dropped behind; buffs, timed weapons and the spike balls that
+  // circle the kart are not aimed at all.
+  if (!def || def.kind === 'self' || def.kind === 'timed'
+    || def.kind === 'orbit' || def.kind === 'mine') return null;
 
   const def2 = def.kind === 'burst' ? { speed: 44 } : def;
   const speed = def2.speed || 40;

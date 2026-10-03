@@ -14,6 +14,15 @@ export const EVENT = Object.freeze({
   RENAME: 'player:rename',
   /** Change character / kart after joining. */
   CUSTOMIZE: 'player:customize',
+  /**
+   * "Put me back in", with no payload. Sent after a wreck once the spectate
+   * countdown has run out (the "Press Any Key" prompt), and from the
+   * between-rounds intermission ("Press Space to join"). The server ignores
+   * it at any other moment, so mashing keys while dead cannot skip the wait.
+   * A separate event rather than an input bit because it is a one-off request,
+   * not something held down 60 times a second.
+   */
+  RESPAWN: 'player:respawn',
 
   // client → server, private-room lobby only
   START: 'room:start',
@@ -29,7 +38,7 @@ export const EVENT = Object.freeze({
   STARTED: 'room:started',
   /** Time is up: final standings, and how long until the next match. */
   MATCH_OVER: 'match:over',
-  /** The results screen is done; a fresh match has begun. */
+  /** The winners screen is done; a fresh match has begun. */
   MATCH_START: 'match:start',
   ERROR: 'error',
 });
@@ -41,19 +50,31 @@ export const EVENT = Object.freeze({
  * want to drive, not to wait. Private rooms are born in LOBBY so the host can
  * see who has turned up before starting. Anyone arriving at a PLAYING room
  * joins mid-match, whichever kind it is.
+ *
+ * A match then loops lobby → playing → roundOver → results → playing. Only
+ * PLAYING counts: outside it nobody can fire, pick up a crate, take damage or
+ * score, so the standings everyone is reading cannot change under them.
  */
 export const ROOM_STATUS = Object.freeze({
   LOBBY: 'lobby',
   PLAYING: 'playing',
-  /** Match over: standings frozen on screen, next match counting down. */
+  /** The whistle has gone: a short "ROUND OVER" beat over the live arena. */
+  ROUND_OVER: 'roundOver',
+  /** Winners on screen, standings frozen, next match counting down. */
   RESULTS: 'results',
 });
 
 /** Match lengths the host can pick, in seconds. */
 export const MATCH_LENGTHS = Object.freeze([120, 180, 300, 600]);
 export const DEFAULT_MATCH_SECONDS = 180;
-/** How long the final leaderboard stays up before the next match begins. */
-export const RESULTS_SECONDS = 10;
+/**
+ * How long "ROUND OVER" holds before the winners are named. Long enough to
+ * read, short enough that nobody wonders whether the game froze. (Inferred
+ * from the original; it was never timed exactly.)
+ */
+export const ROUND_OVER_SECONDS = 3;
+/** How long the winners stay up before the next match begins ("New Round Starting In 12"). */
+export const RESULTS_SECONDS = 12;
 
 export function clampMatchSeconds(n) {
   const v = Math.round(Number(n));
@@ -127,8 +148,30 @@ export const INTERP_MAX_MS = 260;
 export const INTERP_START_MS = 110;
 
 export const MAX_HP = 100;
-export const RESPAWN_DELAY = 2.0;
-export const SPAWN_INVULN = 2.5;
+
+/**
+ * Being wrecked runs in three beats, the same as the original:
+ *
+ *   1. DEATH_CAM_SECONDS  the camera holds on your wreck and the death message
+ *                         says who got you;
+ *   2. RESPAWN_COUNTDOWN  the camera follows your killer with a big 3, 2, 1;
+ *   3. "Press Any Key"    you choose when to drop back in (EVENT.RESPAWN).
+ *
+ * The server only honours a respawn request once both timed beats are over,
+ * and puts an idle player back by itself after AUTO_RESPAWN_SECONDS so a tab
+ * left in the background does not sit dead for the rest of the round.
+ */
+export const DEATH_CAM_SECONDS = 1.5;
+export const RESPAWN_COUNTDOWN = 3;
+export const AUTO_RESPAWN_SECONDS = 10;
+/**
+ * Bots have no key to press, so they come back as soon as the countdown ends,
+ * plus up to this much random delay — otherwise every bot caught in the same
+ * blast would reappear on the same frame.
+ */
+export const BOT_RESPAWN_JITTER = 0.6;
+/** Spawn protection (the green bubble), in seconds. */
+export const SPAWN_INVULN = 3.0;
 
 /**
  * Hidden cheats, triggered by Shift + a number row key. Nothing in the UI

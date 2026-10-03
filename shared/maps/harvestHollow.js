@@ -1,5 +1,5 @@
 /**
- * Harvest Hollow — a working farm at golden hour.
+ * Harvest Hollow — a sunny cartoon farm.
  *
  * The brief was "fewer hurdles, and room for fifteen". The field is 124 m
  * across with only sixteen collision solids on it, against Gravel Pit's 39 in
@@ -133,23 +133,33 @@ export default function harvestHollow() {
     killY: -20,
     arenaRadius: ARENA_R,
     theme: {
-      background: 0x9fd4f0,
-      fog: { color: 0xcfe6f2, near: 130, far: 330 },
-      hemi: { sky: 0xbfe4ff, ground: 0x6f7a3a, intensity: 0.62 },
-      ambient: { color: 0xfff3dc, intensity: 0.34 },
-      // Low and warm: long shadows across the field read as late afternoon.
-      sun: { color: 0xffe9c0, intensity: 2.5, x: -64, y: 52, z: 38 },
+      sky: { top: 0x4ea8ff, horizon: 0xe2f4ff, bottom: 0xe2f4ff },
+      background: 0xe2f4ff,
+      fog: { color: 0xe2f4ff, near: 170, far: 520 },
+      // A lime field bounces green light up into everything standing on it.
+      bounce: 0xd2ecb4,
+      trees: { trunk: 0x9a5b2e, leaves: [0x3fbf3f, 0x56d24a, 0x2fae3c] },
       palette: {
-        grass: 0x6f9e3f,
-        dirt: 0xa9793f,
-        fence: 0xe8dcc0,
-        barnWall: 0xb8352c,
-        silo: 0xd9d4c6,
-        hay: 0xd8b053,
-        millBase: 0xe8dcc0,
+        grass: { color: 0x58d935, checker: true },
+        dirt: { color: 0xf2a03d, stripe: 0xffd27a },
+        // The perimeter is a low white kerb under the picket fence; the fence
+        // posts are the full height of the barrier, so no glass is needed.
+        fence: { color: 0xffffff, kerb: 0.6, glass: false, blockLen: 3.2 },
+        barnWall: { color: 0xe8443a, round: 0.35 },
+        silo: { color: 0xf6f1e4 },
+        hay: { color: 0xffc83d, bale: true, baleLine: 0xe2a12a },
+        millBase: { color: 0xffffff },
+        water: { color: 0x3fa0ff, checker: 0.07 },
       },
-      accent: 0xffc93c,
-      accentAlt: 0x6f9e3f,
+      accent: 0xffc83d,
+      accentAlt: 0x58d935,
+      backdrop: {
+        clouds: { count: 14, r: [230, 360], y: [45, 110], size: [18, 32] },
+        rings: [
+          { prop: 'tree', count: 30, r: [150, 175], h: [9, 14], phase: 0.05, colors: {} },
+          { prop: 'hill', count: 26, r: [190, 250], h: [18, 40], base: -4, colors: {} },
+        ],
+      },
     },
     solids,
     visuals,

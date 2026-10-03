@@ -14,8 +14,9 @@
  *   Aim         a low bot points at where you are; a high bot solves where you
  *               will be and holds fire until the shot is clean.
  *   Reaction    how long it takes to notice and respond to a new situation.
- *   Judgement   whether it picks a sensible target, and whether it uses its
- *               buffs at a sensible moment.
+ *   Judgement   whether it picks a sensible target, whether it uses its
+ *               buffs at a sensible moment, and whether it sees a kart full
+ *               of spikes coming.
  */
 
 export const DIFFICULTY_IDS = Object.freeze(['low', 'medium', 'high']);
@@ -57,6 +58,11 @@ const TIERS = Object.freeze({
     retreatBelowHp: 0,
     /** Chance per second of using a held self-buff at a sensible moment. */
     buffDiscipline: 0.3,
+    /**
+     * How close a kart ringed with spike balls may come before the bot steers
+     * clear of it, metres. 0 = never notices, and blunders straight in.
+     */
+    spikeWariness: 0,
 
     /** Steering wobble amplitude, radians. Sloppy driving. */
     wobble: 0.3,
@@ -85,6 +91,7 @@ const TIERS = Object.freeze({
     finisherBias: 0.4,
     retreatBelowHp: 25,
     buffDiscipline: 0.8,
+    spikeWariness: 10,
 
     wobble: 0.14,
     throttle: 0.93,
@@ -113,6 +120,7 @@ const TIERS = Object.freeze({
     finisherBias: 1,
     retreatBelowHp: 40,
     buffDiscipline: 1,
+    spikeWariness: 14,
 
     wobble: 0.04,
     throttle: 1,

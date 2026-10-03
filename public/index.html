@@ -5,7 +5,11 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Kart Combat</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%23ff8a1f'/%3E%3Crect x='6' y='12' width='20' height='8' rx='3' fill='%23fff'/%3E%3Ccircle cx='10' cy='22' r='4' fill='%23222'/%3E%3Ccircle cx='22' cy='22' r='4' fill='%23222'/%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="/css/game.css" />
+  <!-- Self-hosted Baloo 2; preloaded so the first paint is already in it. -->
+  <link rel="preload" href="/fonts/Baloo2-latin-wght.woff2" as="font" type="font/woff2" crossorigin />
+  <link rel="stylesheet" href="/css/base.css" />
+  <link rel="stylesheet" href="/css/menu.css" />
+  <link rel="stylesheet" href="/css/hud.css" />
   <script src="/socket.io/socket.io.js"></script>
   <script type="importmap">
     { "imports": { "three": "/vendor/three/three.module.js" } }
@@ -15,226 +19,424 @@
   <canvas id="game" tabindex="0"></canvas>
 
   <!-- ── Lobby ─────────────────────────────────────────────────────── -->
-  <div id="lobby">
-    <div class="hill" aria-hidden="true"></div>
-    <div class="clouds" aria-hidden="true"><i></i><i></i><i></i></div>
+  <!-- One screen, no scrolling: logo, the driver on a turntable, PLAY with the
+       arena button bolted on, then Create / Join. Name and Customize sit in a
+       side panel. The menu modals live inside #lobby so they go away with it
+       the moment a match is joined. -->
+  <div id="lobby" class="tk-checker">
+    <h1 class="logo" aria-label="Kart Combat">
+      <span class="logo-word logo-word--top" data-text="KART" aria-hidden="true">KART</span>
+      <span class="logo-word logo-word--bottom" data-text="COMBAT" aria-hidden="true">COMBAT</span>
+    </h1>
 
-    <header class="lobby-head">
-      <h1 class="logo">KART<span>COMBAT</span></h1>
-      <p class="tagline">Arena kart brawls · up to 15 racers</p>
-    </header>
+    <section class="menu-centre">
+      <!-- The 3D turntable. #cz-canvas starts here and moves into Customize
+           while that is open, so one WebGL context serves both screens. -->
+      <div id="menu-stage" class="menu-stage">
+        <canvas id="cz-canvas" aria-label="Your driver and kart"></canvas>
+      </div>
+      <p id="menu-loadout" class="menu-loadout"></p>
 
-    <div class="lobby-body">
-      <section class="panel racer-panel">
-        <h2>Your racer</h2>
-        <label for="player-name">Nickname</label>
-        <input id="player-name" type="text" maxlength="18" placeholder="Racer" autocomplete="nickname" />
-        <label for="player-count">Racers in match</label>
-        <select id="player-count">
-          <option value="2">2</option>
-          <option value="4">4</option>
-          <option value="6">6</option>
-          <option value="8" selected>8</option>
-          <option value="10">10</option>
-          <option value="12">12</option>
-          <option value="15">15</option>
-        </select>
-        <label for="bot-difficulty">Bot skill</label>
-        <select id="bot-difficulty">
-          <option value="low">Easy — sloppy aim, slow to react</option>
-          <option value="medium" selected>Normal</option>
-          <option value="high">Hard — leads every shot</option>
-        </select>
-        <div class="controls-hint">
-          <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span>
-          <span><kbd>Shift</kbd> drift</span>
-          <span><kbd>Space</kbd> fire</span>
-        </div>
-      </section>
+      <div class="play-row">
+        <button type="button" id="btn-play" class="tk-btn tk-btn--play">
+          <span class="play-main">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3.5v17a1.5 1.5 0 0 0 2.3 1.27l13-8.5a1.5 1.5 0 0 0 0-2.54l-13-8.5A1.5 1.5 0 0 0 6 3.5Z"/></svg>
+            PLAY
+          </span>
+          <span id="play-arena" class="play-arena"></span>
+        </button>
+        <button type="button" id="btn-arena" class="tk-btn tk-btn--play"
+                aria-label="Choose arena" aria-haspopup="dialog" aria-controls="arena-modal">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10.7 4.2a1.5 1.5 0 0 1 2.6 0l8.4 14.6a1.5 1.5 0 0 1-1.3 2.2H3.6a1.5 1.5 0 0 1-1.3-2.2Z"/></svg>
+        </button>
+      </div>
 
-      <section class="panel garage-panel">
-        <h2>Your kart</h2>
-        <div id="garage-preview-mini"></div>
-        <p id="garage-summary" class="garage-summary"></p>
-        <button type="button" id="btn-customize">CUSTOMIZE</button>
-      </section>
+      <div class="party-row">
+        <button type="button" id="btn-create" class="tk-btn tk-btn--blue"
+                aria-haspopup="dialog" aria-controls="create-modal">Create</button>
+        <button type="button" id="btn-join" class="tk-btn tk-btn--blue"
+                aria-haspopup="dialog" aria-controls="join-modal">Join</button>
+      </div>
+    </section>
 
-      <section class="panel map-panel">
-        <h2>Pick an arena</h2>
-        <div class="map-cards">
-          <button type="button" class="map-card selected" data-map="gravelPit">
-            <span class="art gravel"></span>
-            <strong>Gravel Pit</strong>
-            <em>Desert bowl, ramps &amp; cover</em>
-          </button>
-          <button type="button" class="map-card" data-map="skyPinball">
-            <span class="art sky"></span>
-            <strong>Sky Pinball</strong>
-            <em>Neon platforms over a void</em>
-          </button>
-          <button type="button" class="map-card" data-map="beybladeArena">
-            <span class="art bey"></span>
-            <strong>Beyblade Arena</strong>
-            <em>A stadium dish that spins</em>
-          </button>
-          <button type="button" class="map-card" data-map="harvestHollow">
-            <span class="art farm"></span>
-            <strong>Harvest Hollow</strong>
-            <em>Open fields, a barn you drive through</em>
-          </button>
-        </div>
-        <button type="button" id="btn-play">PLAY</button>
+    <aside class="menu-side tk-panel">
+      <label class="visually-hidden" for="player-name">Nickname</label>
+      <input id="player-name" class="menu-name" type="text" maxlength="18" placeholder="Nickname"
+             autocomplete="nickname" spellcheck="false" />
+      <button type="button" id="btn-customize" class="tk-btn tk-btn--orange">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M21.4 6.3a1 1 0 0 0-1.65-.35l-2.6 2.6-2.2-.5-.5-2.2 2.6-2.6a1 1 0 0 0-.35-1.65 6 6 0 0 0-7.9 7.35l-6.3 6.3a2.6 2.6 0 0 0 3.7 3.7l6.3-6.3A6 6 0 0 0 21.4 6.3Z"/></svg>
+        Customize
+      </button>
+      <ul class="menu-keys" aria-label="Controls">
+        <li><span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd></span>Drive</li>
+        <li><span><kbd>Shift</kbd></span>Drift</li>
+        <li><span><kbd>Space</kbd></span>Fire</li>
+      </ul>
+    </aside>
 
-        <div class="party">
-          <div class="party-or"><span>or play with friends</span></div>
-          <div class="party-actions">
-            <button type="button" id="btn-create-party">Create private match</button>
-            <form id="join-form">
-              <input id="join-code" type="text" maxlength="5" placeholder="Match code"
-                     autocomplete="off" autocapitalize="characters" spellcheck="false" />
-              <button type="submit" id="btn-join-code">Join</button>
-            </form>
-          </div>
-        </div>
-      </section>
+    <p class="menu-credits">Kart Combat<span class="long"> · a toy-box arena brawler</span> · built with three.js</p>
+
+    <!-- ── Arena picker ── -->
+    <div id="arena-modal" class="tk-modal menu-modal hidden" role="dialog" aria-modal="true"
+         aria-labelledby="arena-title">
+      <div class="tk-modal__card arena-card">
+        <button type="button" class="tk-modal__close" data-close aria-label="Close">&#x2715;</button>
+        <h2 id="arena-title">Choose Arena</h2>
+        <!-- One .map-card[data-map] per arena, built from MAP_IDS. -->
+        <div id="map-cards" class="map-cards"></div>
+      </div>
     </div>
 
+    <!-- ── Create a private match ── -->
+    <div id="create-modal" class="tk-modal menu-modal hidden" role="dialog" aria-modal="true"
+         aria-labelledby="create-title">
+      <div class="tk-modal__card create-card">
+        <button type="button" class="tk-modal__close" data-close aria-label="Close">&#x2715;</button>
+        <h2 id="create-title">Create Private Match</h2>
+        <p class="modal-sub">You get a code to share. Friends with the code drop straight in.</p>
+        <div class="opt-rows">
+          <div class="opt-row">
+            <span class="opt-label" id="cr-arena-label">Arena</span>
+            <div class="tk-stepper" id="cr-arena" role="group" aria-labelledby="cr-arena-label">
+              <button type="button" aria-label="Previous arena">&#9664;</button>
+              <output aria-live="polite"></output>
+              <button type="button" aria-label="Next arena">&#9654;</button>
+            </div>
+          </div>
+          <div class="opt-row">
+            <span class="opt-label" id="cr-length-label">Round Timer</span>
+            <div class="tk-stepper" id="cr-length" role="group" aria-labelledby="cr-length-label">
+              <button type="button" aria-label="Shorter">&#9664;</button>
+              <output aria-live="polite"></output>
+              <button type="button" aria-label="Longer">&#9654;</button>
+            </div>
+          </div>
+          <div class="opt-row">
+            <span class="opt-label" id="cr-max-label">Max Players</span>
+            <div class="tk-stepper" id="cr-max" role="group" aria-labelledby="cr-max-label">
+              <button type="button" aria-label="Fewer players">&#9664;</button>
+              <output aria-live="polite"></output>
+              <button type="button" aria-label="More players">&#9654;</button>
+            </div>
+          </div>
+          <div class="opt-row">
+            <span class="opt-label" id="cr-skill-label">Bot Skill</span>
+            <div class="tk-stepper" id="cr-skill" role="group" aria-labelledby="cr-skill-label">
+              <button type="button" aria-label="Easier bots">&#9664;</button>
+              <output aria-live="polite"></output>
+              <button type="button" aria-label="Harder bots">&#9654;</button>
+            </div>
+          </div>
+          <label class="opt-row opt-row--check">
+            <span class="opt-label">Bots fill empty seats</span>
+            <input type="checkbox" id="cr-bots" class="tk-check" checked />
+          </label>
+        </div>
+        <button type="button" id="btn-create-party" class="tk-btn tk-btn--orange modal-go">Play</button>
+      </div>
+    </div>
+
+    <!-- ── Join a private match by code ── -->
+    <div id="join-modal" class="tk-modal menu-modal hidden" role="dialog" aria-modal="true"
+         aria-labelledby="join-title">
+      <div class="tk-modal__card join-card">
+        <button type="button" class="tk-modal__close" data-close aria-label="Close">&#x2715;</button>
+        <h2 id="join-title">Join Private Match</h2>
+        <p class="modal-sub">Type the code your friend shared.</p>
+        <form id="join-form" novalidate>
+          <label class="visually-hidden" for="join-code">Match code</label>
+          <input id="join-code" type="text" maxlength="5" placeholder="ABCDE" autocomplete="off"
+                 autocapitalize="characters" spellcheck="false" aria-describedby="join-error" />
+          <p id="join-error" class="join-error" role="alert"></p>
+          <button type="submit" id="btn-join-code" class="tk-btn tk-btn--orange modal-go">Join</button>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Connecting ────────────────────────────────────────────────── -->
+  <!-- Covers the gap between pressing PLAY / Create / Join and the server's
+       welcome, so nothing can be pressed twice while the room is being made. -->
+  <div id="loading" class="hidden" role="status" aria-live="polite">
+    <svg class="loading-wheel" viewBox="0 0 48 48" aria-hidden="true">
+      <circle cx="24" cy="24" r="21" />
+      <circle class="hub" cx="24" cy="24" r="12" />
+      <g class="holes"><circle cx="24" cy="16.5" r="2.6"/><circle cx="31.1" cy="21.7" r="2.6"/><circle cx="28.4" cy="30.1" r="2.6"/><circle cx="19.6" cy="30.1" r="2.6"/><circle cx="16.9" cy="21.7" r="2.6"/></g>
+    </svg>
+    <span class="loading-text">Loading…</span>
   </div>
 
   <!-- ── Customize ─────────────────────────────────────────────────── -->
-  <div id="customize" class="hidden">
+  <div id="customize" class="tk-checker hidden" role="dialog" aria-modal="true" aria-labelledby="cz-title">
     <header class="cz-head">
-      <button type="button" id="cz-back" aria-label="Back">&#9664;&#9664;</button>
-      <h2>Customize</h2>
+      <button type="button" id="cz-back" class="tk-icon-btn" aria-label="Back">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M11 6.2v11.6a1 1 0 0 1-1.6.8L2.5 13a1.2 1.2 0 0 1 0-2l6.9-5.6a1 1 0 0 1 1.6.8Zm10 0v11.6a1 1 0 0 1-1.6.8L12.5 13a1.2 1.2 0 0 1 0-2l6.9-5.6a1 1 0 0 1 1.6.8Z"/></svg>
+      </button>
+      <h2 id="cz-title" class="cz-title">Customize</h2>
     </header>
 
     <div class="cz-body">
-      <div class="cz-panel">
-        <div class="cz-tabs" role="tablist">
-          <button type="button" class="cz-tab selected" data-tab="character">Driver</button>
-          <button type="button" class="cz-tab" data-tab="kart">Kart</button>
+      <div class="cz-side">
+        <div class="cz-tabs" role="tablist" aria-label="Category">
+          <button type="button" class="cz-tab selected" data-tab="character" role="tab" aria-selected="true">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="13" r="8.5"/><circle cx="5.2" cy="5.6" r="3"/><circle cx="18.8" cy="5.6" r="3"/></svg>
+            Driver
+          </button>
+          <button type="button" class="cz-tab" data-tab="kart" role="tab" aria-selected="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 15.5 5 10h7l2-3h3l1.5 3H21v5.5Z"/><circle cx="6.5" cy="17" r="3"/><circle cx="17.5" cy="17" r="3"/></svg>
+            Kart
+          </button>
         </div>
-        <div id="cz-options" class="cz-options"></div>
-        <p id="cz-blurb" class="cz-blurb"></p>
-        <button type="button" id="cz-random">Randomize Loadout</button>
+        <div class="cz-panel tk-panel">
+          <div class="cz-panel-head">
+            <h3 id="cz-category">Drivers</h3>
+            <span id="cz-count"></span>
+          </div>
+          <div id="cz-options" class="cz-options"></div>
+          <p id="cz-blurb" class="cz-blurb"></p>
+        </div>
       </div>
 
-      <!-- Live 3D preview: the actual game mesh, not an illustration of it. -->
+      <!-- Live 3D preview: the actual game mesh, not an illustration of it.
+           #cz-canvas is moved in here while this screen is open. -->
       <div class="cz-stage">
-        <canvas id="cz-canvas"></canvas>
         <div class="cz-caption">
           <strong id="cz-name"></strong>
           <span id="cz-sub"></span>
         </div>
+        <button type="button" id="cz-random" class="tk-btn tk-btn--blue">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2Zm2.5 3a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm9 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM12 10.5a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3ZM7.5 15a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Zm9 0a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3Z"/></svg>
+          Randomize Loadout
+        </button>
       </div>
     </div>
   </div>
 
   <!-- ── Waiting room (private matches only) ───────────────────────── -->
+  <!-- Laid over the live arena, which flies by slowly behind it: the header
+       says where and what, the list says who, and the host gets the settings
+       and the start button. -->
   <div id="waiting" class="hidden">
-    <div class="waiting-card">
-      <h2>Waiting to start</h2>
-      <p class="waiting-sub">Share the code and your friends can drop straight in.</p>
+    <header class="wr-header">
+      <strong id="waiting-arena"></strong>
+      <span id="waiting-mode"></span>
+    </header>
 
-      <div class="waiting-code">
-        <span class="label">Match code</span>
-        <strong id="waiting-code"></strong>
-        <button type="button" id="btn-waiting-invite">Copy invite link</button>
-      </div>
-
-      <!-- Anyone who arrived on an invite link skipped the lobby, so this is
-           where they get to be someone other than "Racer". -->
-      <div class="waiting-you">
-        <label for="waiting-name">Your name</label>
-        <input id="waiting-name" type="text" maxlength="18" placeholder="Racer"
-               autocomplete="nickname" spellcheck="false" />
-      </div>
-
-      <div class="waiting-players">
-        <div class="waiting-players-head">
+    <div class="wr-body">
+      <section class="wr-players">
+        <div class="wr-players-head">
           <h3>Players</h3>
           <span id="waiting-count"></span>
         </div>
         <ol id="waiting-list"></ol>
-      </div>
+      </section>
 
-      <!-- Host-only controls; hidden entirely for everyone else. -->
-      <div id="waiting-host" class="waiting-host hidden">
-        <label class="waiting-toggle">
-          <input type="checkbox" id="waiting-bots" checked />
-          <span>Fill empty seats with bots</span>
-        </label>
-        <label class="waiting-field" for="waiting-length">Match length</label>
-        <select id="waiting-length">
-          <option value="120">2 minutes</option>
-          <option value="180" selected>3 minutes</option>
-          <option value="300">5 minutes</option>
-          <option value="600">10 minutes</option>
-        </select>
-        <button type="button" id="btn-start-match">START MATCH</button>
-      </div>
-      <p id="waiting-guest" class="waiting-guest hidden">
-        Waiting for the host to start the match…
-      </p>
+      <div class="wr-side">
+        <section class="wr-card wr-share tk-panel">
+          <span class="wr-label">Room Code</span>
+          <strong id="waiting-code"></strong>
+          <button type="button" id="btn-waiting-invite" class="tk-btn tk-btn--blue">Copy Link</button>
+        </section>
 
-      <button type="button" id="btn-waiting-leave" class="waiting-leave">Leave</button>
+        <!-- Anyone who arrived on an invite link skipped the lobby, so this is
+             where they get to be someone other than "Racer" — and pick a kart. -->
+        <section class="wr-card wr-you tk-panel">
+          <label class="wr-label" for="waiting-name">Your Name</label>
+          <div class="wr-you-row">
+            <input id="waiting-name" type="text" maxlength="18" placeholder="Racer"
+                   autocomplete="nickname" spellcheck="false" />
+            <button type="button" id="btn-waiting-customize" class="tk-btn tk-btn--orange">Customize</button>
+          </div>
+        </section>
+
+        <!-- Host-only settings; hidden entirely for everyone else. -->
+        <section id="waiting-host" class="wr-card wr-settings tk-panel hidden">
+          <h3 class="wr-label">Match Settings</h3>
+          <div class="opt-rows">
+            <div class="opt-row">
+              <span class="opt-label" id="wr-arena-label">Arena</span>
+              <div class="tk-stepper" id="waiting-arena-pick" role="group" aria-labelledby="wr-arena-label">
+                <button type="button" aria-label="Previous arena">&#9664;</button>
+                <output aria-live="polite"></output>
+                <button type="button" aria-label="Next arena">&#9654;</button>
+              </div>
+            </div>
+            <div class="opt-row">
+              <span class="opt-label" id="wr-length-label">Round Timer</span>
+              <div class="tk-stepper" id="waiting-length" role="group" aria-labelledby="wr-length-label">
+                <button type="button" aria-label="Shorter">&#9664;</button>
+                <output aria-live="polite"></output>
+                <button type="button" aria-label="Longer">&#9654;</button>
+              </div>
+            </div>
+            <div class="opt-row">
+              <span class="opt-label" id="wr-max-label">Max Players</span>
+              <div class="tk-stepper" id="waiting-max" role="group" aria-labelledby="wr-max-label">
+                <button type="button" aria-label="Fewer players">&#9664;</button>
+                <output aria-live="polite"></output>
+                <button type="button" aria-label="More players">&#9654;</button>
+              </div>
+            </div>
+            <div class="opt-row">
+              <span class="opt-label" id="wr-skill-label">Bot Skill</span>
+              <div class="tk-stepper" id="waiting-skill" role="group" aria-labelledby="wr-skill-label">
+                <button type="button" aria-label="Easier bots">&#9664;</button>
+                <output aria-live="polite"></output>
+                <button type="button" aria-label="Harder bots">&#9654;</button>
+              </div>
+            </div>
+            <label class="opt-row opt-row--check">
+              <span class="opt-label">Bots fill empty seats</span>
+              <input type="checkbox" id="waiting-bots" class="tk-check" checked />
+            </label>
+          </div>
+        </section>
+      </div>
     </div>
+
+    <footer class="wr-foot">
+      <div id="waiting-start" class="wr-start hidden">
+        <p class="wr-press">Press <kbd>Space</kbd> to start round</p>
+        <button type="button" id="btn-start-match" class="tk-btn tk-btn--play">Start</button>
+      </div>
+      <p id="waiting-guest" class="wr-press hidden">Waiting for the host to start…</p>
+      <button type="button" id="btn-waiting-leave" class="tk-btn tk-btn--ghost wr-leave">Leave</button>
+    </footer>
   </div>
 
   <!-- ── In-match HUD ──────────────────────────────────────────────── -->
-  <div id="hud" class="hidden">
-    <div id="leaderboard" class="hud-panel">
-      <h3>Scores</h3>
-      <ol id="leaderboard-list"></ol>
+  <!-- data-phase: playing | roundOver | results. data-life: alive | dead |
+       out (sitting the round out). hud.css hides whatever a state does not
+       show, so the same markup serves every screen of the match. -->
+  <div id="hud" class="hidden" data-phase="playing" data-life="alive">
+    <!-- Top-left: where you stand, then the board. -->
+    <div id="rank-pill">
+      <span class="rank-icon" aria-hidden="true"></span>
+      <span id="rank-text"><span id="rank-pos">-</span><sup id="rank-ord"></sup><span class="rank-of"> / </span><span id="rank-count">0</span></span>
+      <button type="button" id="btn-rank-info" class="info-dot" aria-label="Keep the full leaderboard open" title="Keep the full leaderboard open">i</button>
+    </div>
+    <div id="leaderboard">
+      <ol id="leaderboard-list" aria-label="Leaderboard"></ol>
     </div>
 
-    <div id="match-timer"><span id="match-clock">0:00</span></div>
-
-    <div id="kill-feed"></div>
-
-    <div id="invite" class="hud-panel hidden">
-      <span class="label">Match code</span>
-      <strong id="invite-code"></strong>
-      <button type="button" id="btn-invite">Copy invite link</button>
-      <span class="divider" aria-hidden="true"></span>
-      <span class="label">Bots</span>
-      <strong id="invite-difficulty"></strong>
-    </div>
-
-    <div id="bottom-left">
-      <div id="weapon" class="hud-panel">
-        <div id="weapon-icon"></div>
-        <div class="weapon-text">
-          <span class="label">Weapon</span>
-          <span id="weapon-name">Empty</span>
-        </div>
-      </div>
-      <div id="health" class="hud-panel">
-        <div class="health-row">
-          <span class="label">Health</span>
-          <span id="health-text">100</span>
-        </div>
+    <!-- Top-centre: health, then the clock. -->
+    <div id="top-center">
+      <div id="health">
+        <span class="hud-icon heart-icon" aria-hidden="true"></span>
         <div id="health-bar"><div id="health-fill"></div></div>
+        <span id="health-text" class="visually-hidden">100</span>
+      </div>
+      <div id="match-timer">
+        <span class="hud-icon clock-icon" aria-hidden="true"></span>
+        <span id="match-clock">180</span>
+        <button type="button" id="btn-match-info" class="info-dot" aria-label="Match info" title="Match info">i</button>
       </div>
     </div>
+    <div id="match-info" class="tk-panel hidden"></div>
 
-    <div id="respawn" class="hidden">
-      <div class="respawn-card">
-        <h2>Wrecked!</h2>
-        <p>Back on the track in a moment…</p>
+    <!-- Top-right: buttons (the fullscreen button lands in the last slot),
+         then FPS and ping. -->
+    <div id="hud-buttons">
+      <span id="spectate-eye" class="tk-icon-btn hidden" title="Spectating" aria-hidden="true"></span>
+      <div id="invite" class="hidden">
+        <button type="button" id="btn-invite" class="tk-icon-btn" aria-label="Invite friends" title="Invite friends"></button>
       </div>
+      <button type="button" id="btn-settings" class="tk-icon-btn" aria-label="Settings" title="Settings (Esc)"></button>
+    </div>
+    <div id="net-stats"><span id="stat-fps">FPS: 60</span><span id="stat-ping">PING: –</span></div>
+
+    <!-- Bottom-right: the weapon slot. #weapon-name pops up when a pickup lands. -->
+    <div id="weapon">
+      <div id="weapon-icon"></div>
+      <span id="weapon-count" class="tk-badge hidden"></span>
+      <span id="weapon-name" class="tk-pill">Empty</span>
     </div>
 
-    <div id="hint">WASD drive · Shift drift · Space fire</div>
+    <!-- A reminder, not a fixture: shown for a few seconds after the first spawn. -->
+    <p id="hint" class="tk-pill hidden">
+      <span><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> drive</span>
+      <span><kbd>Shift</kbd> drift</span>
+      <span><kbd>Space</kbd> fire</span>
+      <span><kbd>Esc</kbd> menu</span>
+    </p>
 
-    <!-- Final standings between matches. Frozen server-side at the whistle so
-         it cannot reshuffle while people are reading it. -->
+    <div id="hit-vignette" aria-hidden="true"></div>
+    <p id="smash-banner" class="hud-shout hidden" role="status"></p>
+
+    <!-- Death → spectate the killer → press any key. -->
+    <div id="death-msg" class="hud-shout hidden" role="status">
+      <p id="death-line1"></p>
+      <p id="death-line2"></p>
+    </div>
+    <div id="spectate-count" class="hud-shout hidden" aria-live="polite"></div>
+    <p id="press-any-key" class="hud-shout hidden">Press Any Key To Continue</p>
+
+    <!-- Round over → winners → next round. Standings are frozen server-side
+         at the whistle; the leaderboard on the left shows them, and
+         #results-list keeps them as text for screen readers and tests. -->
     <div id="results" class="hidden">
-      <div class="results-card">
-        <h2 id="results-winner">Time!</h2>
-        <ol id="results-list"></ol>
-        <p class="results-next">Next match in <strong id="results-countdown">10</strong>s</p>
+      <p id="round-over" class="hud-shout">ROUND OVER</p>
+      <div id="winners" class="hud-shout hidden">
+        <h2 id="results-winner"></h2>
       </div>
+      <ol id="results-list" class="visually-hidden" aria-label="Final standings"></ol>
+      <p id="results-next" class="hud-shout hidden">New Round Starting In <strong id="results-countdown">12</strong></p>
+      <div id="confetti" aria-hidden="true"></div>
+    </div>
+
+    <!-- Between rounds you sit out until you choose to drop back in. -->
+    <div id="intermission" class="hidden">
+      <div class="im-card">
+        <strong id="im-arena"></strong>
+        <span id="im-mode"></span>
+      </div>
+      <div class="im-board">
+        <h3>Leaderboard</h3>
+        <ol id="im-list"></ol>
+      </div>
+      <button type="button" id="btn-join-round" class="hud-shout">Press <kbd>Space</kbd> to join</button>
+    </div>
+  </div>
+
+  <!-- In-match modals live outside #hud so they stack above the fullscreen
+       button and take clicks; #hud itself is click-through. -->
+  <div id="settings" class="tk-modal hidden" role="dialog" aria-modal="true" aria-labelledby="settings-title">
+    <div class="tk-modal__card">
+      <button type="button" class="tk-modal__close" aria-label="Close">✕</button>
+      <h2 id="settings-title">Settings</h2>
+      <p class="modal-sub">Press <b>Esc</b> to toggle this menu</p>
+      <div class="settings-rows">
+        <label class="settings-row" for="set-minimise">
+          <span>Minimise Leaderboard</span>
+          <input type="checkbox" id="set-minimise" class="tk-check" />
+        </label>
+        <label class="settings-row" for="set-tilt">
+          <span>Camera Tilt</span>
+          <input type="checkbox" id="set-tilt" class="tk-check" />
+        </label>
+        <label class="settings-row" for="set-stats">
+          <span>Show FPS &amp; Ping</span>
+          <input type="checkbox" id="set-stats" class="tk-check" />
+        </label>
+        <p class="settings-row settings-info"><span>Bot skill</span><strong id="settings-bots"></strong></p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="btn-quit" class="tk-btn tk-btn--blue">Quit</button>
+        <button type="button" id="btn-resume" class="tk-btn tk-btn--orange" data-autofocus>Resume</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="share" class="tk-modal hidden" role="dialog" aria-modal="true" aria-labelledby="share-title">
+    <div class="tk-modal__card">
+      <button type="button" class="tk-modal__close" aria-label="Close">✕</button>
+      <h2 id="share-title">Invite Friends</h2>
+      <p class="modal-sub">Send the link, or read out the code</p>
+      <p class="share-code"><span>Code:</span> <strong id="invite-code"></strong></p>
+      <div class="modal-actions">
+        <button type="button" id="btn-invite-copy" class="tk-btn tk-btn--orange" data-autofocus>Copy Link</button>
+      </div>
+      <p class="share-bots">Bots: <strong id="invite-difficulty"></strong></p>
     </div>
   </div>
 
