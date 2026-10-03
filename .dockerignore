@@ -15,6 +15,9 @@ scripts
 *.md
 .DS_Store
 
+# Claude Code's local state, including whole git worktrees of this repo.
+.claude
+
 # Never bake secrets into an image layer — they persist even if a later layer
 # deletes the file.
 .env
